@@ -1,0 +1,253 @@
+"""Per-robot collaborative occupancy mapper (C-SLAM-lite) + RF-shadow layer.
+
+Builds a log-odds occupancy grid by raytracing the lidar from the FUSED pose
+estimate published by the localizer (not ground truth — map quality honestly
+degrades with localization error).
+
+Map sharing happens EXCLUSIVELY over the mesh: once a second the mapper
+broadcasts the cells whose state changed ("map patches"). Patches from peers
+— possibly relayed multi-hop — are merged into a fused map. Direct
+observation wins over hearsay: a cell this robot sensed itself is never
+overwritten by a peer. If the mesh partitions, the fused maps visibly stop
+converging; that is the point.
+
+ISAC addition — the mesh maps what lidar has not seen: the localizer emits
+<ns>/rf_ray events for links that measured more attenuation than free space
+predicts. Cells along those inter-robot rays accumulate obstruction
+evidence; where lidar knows nothing but RF evidence is strong, the merged
+map shows a "suspected obstacle" (value 60) and the layer is also published
+raw on <ns>/rf_map.
+"""
+import json
+import math
+
+import numpy as np
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+from std_msgs.msg import String
+from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import LaserScan
+
+RES = 0.15
+ORIGIN = -16.0            # grid covers [-16, 16) in x and y
+SIZE = int(32.0 / RES)    # cells per side
+L_HIT = 6
+L_FREE = -2
+L_MIN, L_MAX = -40, 60
+OCC_T = 8
+FREE_T = -4
+PATCH_CELL_CAP = 3000     # max cells per mesh patch message
+RF_VOTE_T = 4.0           # accumulated excess-loss votes -> suspected cell
+SUSPECT = 60              # occupancy value for RF-suspected cells
+
+
+class Mapper(Node):
+    def __init__(self):
+        super().__init__('mapper')
+        self.declare_parameter('robot', 'rover_1')
+        self.me = self.get_parameter('robot').value
+
+        self.logodds = np.zeros((SIZE, SIZE), dtype=np.int16)
+        self.state = np.full((SIZE, SIZE), -1, dtype=np.int8)   # own map
+        self.peer_maps = {}                                     # name -> grid
+        self.rf_votes = np.zeros((SIZE, SIZE), dtype=np.float32)
+        self.dirty = set()
+        self.pose = None
+        self.last_scan_t = 0.0
+
+        ns = f'/{self.me}'
+        latched = QoSProfile(depth=1,
+                             durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                             reliability=ReliabilityPolicy.RELIABLE)
+        self.pub_map = self.create_publisher(OccupancyGrid, f'{ns}/map', latched)
+        self.pub_merged = self.create_publisher(OccupancyGrid, f'{ns}/merged_map', latched)
+        self.pub_rf = self.create_publisher(OccupancyGrid, f'{ns}/rf_map', latched)
+        self.pub_mesh = self.create_publisher(String, f'{ns}/mesh/tx_app', 20)
+
+        self.create_subscription(PoseStamped, f'{ns}/pose', self.on_pose, 20)
+        self.create_subscription(LaserScan, f'{ns}/scan', self.on_scan, 5)
+        self.create_subscription(String, f'{ns}/mesh/rx', self.on_mesh, 50)
+        self.create_subscription(String, f'{ns}/rf_ray', self.on_rf_ray, 20)
+
+        self.create_timer(1.0, self.broadcast_patch)
+        self.create_timer(1.0, self.publish_maps)
+
+    def on_pose(self, msg: PoseStamped):
+        q = msg.pose.orientation
+        yaw = math.atan2(2.0 * q.w * q.z, 1.0 - 2.0 * q.z * q.z)
+        self.pose = (msg.pose.position.x, msg.pose.position.y, yaw)
+
+    # ---------------- lidar mapping ----------------
+
+    def on_scan(self, msg: LaserScan):
+        if self.pose is None:
+            return
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if now - self.last_scan_t < 0.3:
+            return
+        self.last_scan_t = now
+
+        x, y, yaw = self.pose
+        rx = int((x - ORIGIN) / RES)
+        ry = int((y - ORIGIN) / RES)
+        if not (0 <= rx < SIZE and 0 <= ry < SIZE):
+            return
+
+        ranges = np.asarray(msg.ranges, dtype=np.float32)
+        n = len(ranges)
+        angles = msg.angle_min + np.arange(n) * msg.angle_increment + yaw
+        max_r = msg.range_max
+
+        touched = {}
+        for i in range(0, n, 2):
+            r = ranges[i]
+            hit = True
+            if not np.isfinite(r) or r >= max_r * 0.99:
+                r = max_r * 0.95
+                hit = False
+            elif r < msg.range_min:
+                continue
+            ex = x + r * math.cos(angles[i])
+            ey = y + r * math.sin(angles[i])
+            gx = int((ex - ORIGIN) / RES)
+            gy = int((ey - ORIGIN) / RES)
+            steps = max(abs(gx - rx), abs(gy - ry))
+            if steps == 0:
+                continue
+            xs = np.rint(np.linspace(rx, gx, steps + 1)).astype(np.int32)
+            ys = np.rint(np.linspace(ry, gy, steps + 1)).astype(np.int32)
+            ok = (xs >= 0) & (xs < SIZE) & (ys >= 0) & (ys < SIZE)
+            xs, ys = xs[ok], ys[ok]
+            if len(xs) == 0:
+                continue
+            if hit:
+                fxs, fys = xs[:-1], ys[:-1]
+                touched[(int(ys[-1]), int(xs[-1]))] = L_HIT
+            else:
+                fxs, fys = xs, ys
+            for fx, fy in zip(fxs, fys):
+                key = (int(fy), int(fx))
+                if key not in touched:
+                    touched[key] = L_FREE
+
+        for (cy, cx), delta in touched.items():
+            old = int(self.state[cy, cx])
+            self.logodds[cy, cx] = np.clip(self.logodds[cy, cx] + delta, L_MIN, L_MAX)
+            new = self.tri(self.logodds[cy, cx])
+            if new != old:
+                self.state[cy, cx] = new
+                self.dirty.add(cy * SIZE + cx)
+
+    @staticmethod
+    def tri(lo):
+        if lo > OCC_T:
+            return 100
+        if lo < FREE_T:
+            return 0
+        return -1
+
+    # ---------------- RF-shadow evidence ----------------
+
+    def on_rf_ray(self, msg: String):
+        try:
+            ray = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        (ax, ay), (bx, by) = ray['a'], ray['b']
+        excess = float(ray.get('x', 0.0))
+        length = math.hypot(bx - ax, by - ay)
+        if length < 1.5:
+            return
+        # Skip the segment ends (the robots themselves occupy those cells).
+        trim = min(0.7 / length, 0.4)
+        n = int(length / RES) + 1
+        ts = np.linspace(trim, 1.0 - trim, n)
+        xs = ax + ts * (bx - ax)
+        ys = ay + ts * (by - ay)
+        ix = ((xs - ORIGIN) / RES).astype(int)
+        iy = ((ys - ORIGIN) / RES).astype(int)
+        ok = (ix >= 0) & (ix < SIZE) & (iy >= 0) & (iy < SIZE)
+        self.rf_votes[iy[ok], ix[ok]] += min(excess, 12.0) / 8.0
+
+    # ---------------- mesh map sharing ----------------
+
+    def broadcast_patch(self):
+        if not self.dirty:
+            return
+        batch = []
+        while self.dirty and len(batch) < PATCH_CELL_CAP:
+            batch.append(self.dirty.pop())
+        occ = [i for i in batch if self.state.flat[i] == 100]
+        free = [i for i in batch if self.state.flat[i] == 0]
+        payload = {'type': 'MAP_PATCH', 'ttl': 4,
+                   'data': {'o': occ, 'f': free}}
+        self.pub_mesh.publish(String(data=json.dumps(payload)))
+
+    def on_mesh(self, msg: String):
+        try:
+            pkt = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if pkt.get('type') != 'MAP_PATCH':
+            return
+        src = pkt.get('src')
+        if src is None or src == self.me:
+            return
+        grid = self.peer_maps.get(src)
+        if grid is None:
+            grid = np.full((SIZE, SIZE), -1, dtype=np.int8)
+            self.peer_maps[src] = grid
+        data = pkt.get('data', {})
+        for i in data.get('o', []):
+            if 0 <= i < SIZE * SIZE:
+                grid.flat[i] = 100
+        for i in data.get('f', []):
+            if 0 <= i < SIZE * SIZE:
+                grid.flat[i] = 0
+
+    # ---------------- publishing ----------------
+
+    def grid_msg(self, arr):
+        g = OccupancyGrid()
+        g.header.stamp = self.get_clock().now().to_msg()
+        g.header.frame_id = 'map'
+        g.info.resolution = RES
+        g.info.width = SIZE
+        g.info.height = SIZE
+        g.info.origin.position.x = ORIGIN
+        g.info.origin.position.y = ORIGIN
+        g.info.origin.orientation.w = 1.0
+        g.data = arr.astype(np.int8).ravel().tolist()
+        return g
+
+    def publish_maps(self):
+        self.pub_map.publish(self.grid_msg(self.state))
+        merged = self.state.copy()
+        for grid in self.peer_maps.values():
+            unknown = merged == -1
+            merged[unknown] = grid[unknown]
+        # RF-shadow: where nothing lidar-based is known but the mesh kept
+        # losing signal through it, mark a suspected obstacle.
+        suspect = (merged == -1) & (self.rf_votes >= RF_VOTE_T)
+        merged[suspect] = SUSPECT
+        self.pub_merged.publish(self.grid_msg(merged))
+
+        rf = np.full((SIZE, SIZE), -1, dtype=np.int8)
+        hot = self.rf_votes > 0.5
+        rf[hot] = np.clip(self.rf_votes[hot] * 20.0, 1, 100).astype(np.int8)
+        self.pub_rf.publish(self.grid_msg(rf))
+
+
+def main():
+    rclpy.init()
+    node = Mapper()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,7 @@
+# Delivery mission briefing — preloaded on every rover before deployment
+# (like a real op order). Targets match the red pads in worlds/arena.sdf.
+targets:
+  - [10.0, 10.0]    # pad A, north-east
+  - [11.0, -10.0]   # pad B, south-east
+  - [-9.0, 9.0]     # pad C, north-west
+base: [-11.0, -11.0]

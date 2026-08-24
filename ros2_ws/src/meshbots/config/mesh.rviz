@@ -1,0 +1,176 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 70
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+      Splitter Ratio: 0.5
+    Tree Height: 700
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Cell Size: 5
+      Color: 100; 100; 105
+      Enabled: true
+      Name: Grid
+      Plane Cell Count: 8
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Marker Scale: 4
+      Name: TF
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Value: true
+    - Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: true
+      Enabled: true
+      Name: MergedMap rover_1
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rover_1/merged_map
+      Update Topic:
+        Value: /rover_1/merged_map_updates
+      Use Timestamp: false
+      Value: true
+    - Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: true
+      Enabled: false
+      Name: MergedMap rover_2
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rover_2/merged_map
+      Update Topic:
+        Value: /rover_2/merged_map_updates
+      Use Timestamp: false
+      Value: false
+    - Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: true
+      Enabled: false
+      Name: MergedMap rover_3
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rover_3/merged_map
+      Update Topic:
+        Value: /rover_3/merged_map_updates
+      Use Timestamp: false
+      Value: false
+    - Class: rviz_default_plugins/LaserScan
+      Color: 255; 80; 60
+      Color Transformer: FlatColor
+      Enabled: true
+      Name: Scan rover_1
+      Size (m): 0.06
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /rover_1/scan
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Color: 60; 140; 255
+      Color Transformer: FlatColor
+      Enabled: true
+      Name: Scan rover_2
+      Size (m): 0.06
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /rover_2/scan
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Color: 250; 200; 30
+      Color Transformer: FlatColor
+      Enabled: true
+      Name: Scan rover_3
+      Size (m): 0.06
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /rover_3/scan
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Mesh Links
+      Namespaces: {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mesh/links
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Swarm Markers
+      Namespaces: {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /swarm/markers
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 35; 38; 41
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Swap: false
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Scale: 24
+      Target Frame: <Fixed Frame>
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0
+      Y: 0
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1000
+  Width: 1500
+  X: 60
+  Y: 60
