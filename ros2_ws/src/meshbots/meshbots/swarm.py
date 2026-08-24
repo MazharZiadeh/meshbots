@@ -1,9 +1,10 @@
 """Per-robot swarm intelligence. Identical code on every rover; no central node.
+Runs inside the robot's namespace; behaviour constants live in config/swarm.yaml.
 
 All inter-robot knowledge arrives via the mesh (possibly multi-hop):
 
-* BEACON (2 Hz): pose, phase, current target, delivered set, leader claim.
-  Peers heard within `peer_timeout` form the "alive" set.
+* BEACON: pose, phase, current target, delivered set, leader claim. Peers
+  heard within `peer_timeout` form the "alive" set.
 * Leader election: leader = lexicographically-smallest alive robot id.
   Kill the leader and, one timeout later, the next rover takes over and
   resumes the mission from its own replicated belief — decentralized failover.
@@ -12,66 +13,65 @@ All inter-robot knowledge arrives via the mesh (possibly multi-hop):
   literally depends on a teammate's broadcast estimate (cooperative,
   "independent yet dependent" localization). Mesh partition => followers hold.
 * Task allocation: market-based. At each delivery pad every alive robot
-  broadcasts a BID (cost = its distance to the pad). Everyone computes the
-  same argmin locally => everyone agrees on the winner without a master.
-  The winner detaches, docks on the pad, dwells, broadcasts DELIVERED,
-  and the squadron moves on.
+  broadcasts a BID (cost = distance to pad + a load-balancing penalty per
+  delivery already made). Everyone computes the same argmin locally, so the
+  team agrees on the winner without a master. The winner detaches, docks,
+  dwells, broadcasts DELIVERED, and the squadron moves on.
 """
 import json
 import math
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
-from geometry_msgs.msg import PoseStamped, Point, Vector3
+from std_msgs.msg import String, ColorRGBA
+from geometry_msgs.msg import PoseStamped, Vector3
 from visualization_msgs.msg import Marker, MarkerArray
-from std_msgs.msg import ColorRGBA
-
-BEACON_PERIOD = 0.5
-TICK_PERIOD = 0.2
-PEER_TIMEOUT = 3.0
-BID_PERIOD = 1.0
-BID_FRESH = 2.6
-ARRIVE_R = 2.2          # squadron "at objective" radius (leader)
-DOCK_R = 0.55           # deliverer docking radius
-DWELL = 3.0             # seconds spent "delivering"
-DELIVER_TIMEOUT = 60.0
-SLOTS = [(-1.9, 1.5), (-1.9, -1.5), (-3.4, 0.0)]  # wedge offsets in leader frame
 
 
 class Swarm(Node):
     def __init__(self):
         super().__init__('swarm')
-        self.declare_parameter('robot', 'rover_1')
-        self.declare_parameter('targets', [10.0, 10.0])   # flat x,y list
-        self.declare_parameter('base', [-11.0, -11.0])
-        self.me = self.get_parameter('robot').value
-        flat = list(self.get_parameter('targets').value)
-        self.targets = [(flat[i], flat[i + 1]) for i in range(0, len(flat), 2)]
-        self.base = list(self.get_parameter('base').value)
+        self.me = self.get_namespace().strip('/')
+        p = self.declare_parameters('', [
+            ('targets', [10.0, 10.0]), ('base', [-11.0, -11.0]),
+            ('beacon_period', 0.5), ('peer_timeout', 3.0),
+            ('arrive_radius', 2.2), ('dock_radius', 0.55),
+            ('dwell', 3.0), ('deliver_timeout', 60.0),
+            ('bid_period', 1.0), ('bid_fresh', 2.6),
+            ('auction_quiet', 3.0), ('load_penalty', 8.0),
+            ('slots_flat', [-1.9, 1.5, -1.9, -1.5, -3.4, 0.0])])
+        (targets_flat, self.base, beacon_period, self.peer_timeout,
+         self.arrive_r, self.dock_r, self.dwell, self.deliver_timeout,
+         self.bid_period, self.bid_fresh, self.auction_quiet,
+         self.load_penalty, slots_flat) = [x.value for x in p]
+        self.targets = [(targets_flat[i], targets_flat[i + 1])
+                        for i in range(0, len(targets_flat), 2)]
+        self.slots = [(slots_flat[i], slots_flat[i + 1])
+                      for i in range(0, len(slots_flat), 2)]
 
         self.pose = None                 # my (x, y, yaw)
         self.peers = {}                  # name -> {p, ph, tgt, done, t}
         self.done = set()                # delivered target indices (replicated)
-        self.phase = 'TRAVEL'            # my belief of squadron phase
-        self.tgt = 0                     # current target index
-        self.bids = {}                   # name -> (cost, stamp), for current tgt
+        self.phase = 'TRAVEL'
+        self.tgt = 0
+        self.bids = {}                   # name -> (cost, stamp), current tgt
         self.deliver_since = None
         self.dock_since = None
         self.delivered_sent = 0
         self.last_bid_t = 0.0
-        self.my_deliveries = 0   # load-balancing term for the auction
+        self.my_deliveries = 0           # load-balancing term for the auction
+        self._auction_tgt = None
+        self._auction_t0 = 0.0
 
-        ns = f'/{self.me}'
-        self.pub_mesh = self.create_publisher(String, f'{ns}/mesh/tx_app', 30)
-        self.pub_goal = self.create_publisher(PoseStamped, f'{ns}/goal', 10)
+        self.pub_mesh = self.create_publisher(String, 'mesh/tx_app', 30)
+        self.pub_goal = self.create_publisher(PoseStamped, 'goal', 10)
         self.pub_marks = self.create_publisher(MarkerArray, '/swarm/markers', 10)
-        self.pub_status = self.create_publisher(String, f'{ns}/swarm_status', 5)
-        self.create_subscription(PoseStamped, f'{ns}/pose', self.on_pose, 20)
-        self.create_subscription(String, f'{ns}/mesh/rx', self.on_mesh, 80)
+        self.pub_status = self.create_publisher(String, 'swarm_status', 5)
+        self.create_subscription(PoseStamped, 'pose', self.on_pose, 20)
+        self.create_subscription(String, 'mesh/rx', self.on_mesh, 80)
 
-        self.create_timer(BEACON_PERIOD, self.send_beacon)
-        self.create_timer(TICK_PERIOD, self.tick)
+        self.create_timer(beacon_period, self.send_beacon)
+        self.create_timer(0.2, self.tick)
         self.create_timer(1.0, self.publish_markers)
 
     # ---------------- helpers ----------------
@@ -82,7 +82,8 @@ class Swarm(Node):
     def alive(self):
         t = self.now()
         names = {self.me}
-        names |= {n for n, d in self.peers.items() if t - d['t'] < PEER_TIMEOUT}
+        names |= {n for n, d in self.peers.items()
+                  if t - d['t'] < self.peer_timeout}
         return sorted(names)
 
     def leader(self):
@@ -137,13 +138,17 @@ class Swarm(Node):
                 return i
         return None
 
+    def my_cost(self):
+        tx, ty = self.targets[self.tgt]
+        return (math.hypot(self.pose[0] - tx, self.pose[1] - ty)
+                + self.load_penalty * self.my_deliveries)
+
     def winner(self):
         t = self.now()
-        fresh = {n: c for n, (c, ts) in self.bids.items() if t - ts < BID_FRESH}
+        fresh = {n: c for n, (c, ts) in self.bids.items()
+                 if t - ts < self.bid_fresh}
         if self.pose is not None:
-            tx, ty = self.targets[self.tgt]
-            fresh[self.me] = (math.hypot(self.pose[0] - tx, self.pose[1] - ty)
-                              + 8.0 * self.my_deliveries)
+            fresh[self.me] = self.my_cost()
         if not fresh:
             return None
         return min(fresh.items(), key=lambda kv: (kv[1], kv[0]))[0]
@@ -151,13 +156,10 @@ class Swarm(Node):
     def tick(self):
         if self.pose is None:
             return
-        me_leader = self.leader() == self.me
-
-        if me_leader:
+        if self.leader() == self.me:
             self.tick_leader()
         else:
             self.tick_follower()
-
         self.pub_status.publish(String(data=json.dumps({
             'me': self.me, 'leader': self.leader(), 'phase': self.phase,
             'tgt': self.tgt, 'done': sorted(self.done),
@@ -173,7 +175,7 @@ class Swarm(Node):
                 return
             self.tgt = nxt
             tx, ty = self.targets[self.tgt]
-            if math.hypot(x - tx, y - ty) < ARRIVE_R:
+            if math.hypot(x - tx, y - ty) < self.arrive_r:
                 self.phase = 'DELIVER'
                 self.deliver_since = self.now()
                 self.bids = {}
@@ -186,7 +188,7 @@ class Swarm(Node):
                 self.dock_since = None
                 self.delivered_sent = 0
                 return
-            if self.now() - self.deliver_since > DELIVER_TIMEOUT:
+            if self.now() - self.deliver_since > self.deliver_timeout:
                 self.deliver_since = self.now()
                 self.bids = {}
             self.run_auction_role()
@@ -206,7 +208,7 @@ class Swarm(Node):
     def tick_follower(self):
         ldr = self.leader()
         info = self.peers.get(ldr)
-        if info is None or self.now() - info['t'] > PEER_TIMEOUT:
+        if info is None or self.now() - info['t'] > self.peer_timeout:
             return                        # partitioned from leader: hold
         # Adopt the leader's replicated mission state.
         self.phase = info['ph'] or self.phase
@@ -221,7 +223,7 @@ class Swarm(Node):
         """Common DELIVER-phase behaviour for leader and followers."""
         if self.tgt in self.done or self.tgt >= len(self.targets):
             return
-        if getattr(self, '_auction_tgt', None) != self.tgt:
+        if self._auction_tgt != self.tgt:
             self._auction_tgt = self.tgt
             self._auction_t0 = self.now()
             self.delivered_sent = 0
@@ -229,16 +231,17 @@ class Swarm(Node):
         x, y, _ = self.pose
         tx, ty = self.targets[self.tgt]
         # Keep bidding so everyone converges on the same argmin.
-        if self.now() - self.last_bid_t > BID_PERIOD:
+        if self.now() - self.last_bid_t > self.bid_period:
             self.last_bid_t = self.now()
-            cost = math.hypot(x - tx, y - ty) + 8.0 * self.my_deliveries
-            self.mesh_send('BID', {'tgt': self.tgt, 'c': round(cost, 3)})
+            self.mesh_send('BID', {'tgt': self.tgt,
+                                   'c': round(self.my_cost(), 3)})
         # Quiet period: let bids propagate (possibly multi-hop) before anyone
         # acts, so early self-favouring winners don't cause churn.
         others = [n for n in self.alive() if n != self.me]
         have_all = all(n in self.bids and
-                       self.now() - self.bids[n][1] < BID_FRESH for n in others)
-        if not have_all and self.now() - self._auction_t0 < 3.0:
+                       self.now() - self.bids[n][1] < self.bid_fresh
+                       for n in others)
+        if not have_all and self.now() - self._auction_t0 < self.auction_quiet:
             if leader_info is not None:
                 self.publish_formation_goal(leader_info)
             return
@@ -250,33 +253,30 @@ class Swarm(Node):
             return
         # I won the auction: dock on the pad and deliver.
         d = math.hypot(x - tx, y - ty)
-        if d > DOCK_R:
+        if d > self.dock_r:
             self.dock_since = None
             self.publish_goal(tx, ty)
             return
         if self.dock_since is None:
             self.dock_since = self.now()
             self.get_logger().info(f'{self.me}: docked on pad {self.tgt}, delivering…')
-        if self.now() - self.dock_since > DWELL and self.delivered_sent < 3:
+        if self.now() - self.dock_since > self.dwell and self.delivered_sent < 3:
             if self.tgt not in self.done:
                 self.my_deliveries += 1
             self.done.add(self.tgt)
             self.mesh_send('DELIVERED', {'tgt': self.tgt})
             self.delivered_sent += 1
             self.get_logger().info(f'{self.me}: DELIVERED target {self.tgt}')
-        if self.tgt in self.done:
-            self.delivered_sent = 0
 
     def publish_formation_goal(self, leader_info):
         p = leader_info.get('p')
         if not p:
             return
         lx, ly, lyaw = p
-        alive = self.alive()
-        followers = [n for n in alive if n != self.leader()]
+        followers = [n for n in self.alive() if n != self.leader()]
         try:
-            slot = SLOTS[followers.index(self.me)]
-        except ValueError:
+            slot = self.slots[followers.index(self.me)]
+        except (ValueError, IndexError):
             return
         c, s = math.cos(lyaw), math.sin(lyaw)
         gx = lx + c * slot[0] - s * slot[1]

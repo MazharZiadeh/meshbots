@@ -1,0 +1,4 @@
+# Mesh radio (per robot) — flooding relay behaviour.
+/**/mesh_radio:
+  ros__parameters:
+    default_ttl: 4           # max hops for a flooded packet

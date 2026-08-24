@@ -1,19 +1,18 @@
 """Per-robot mesh radio: MANET-style flooding with TTL and duplicate suppression.
 
-Each robot owns one of these. Local applications (mapper, swarm) publish
-application payloads on  <ns>/mesh/tx_app  and receive peer traffic on
-<ns>/mesh/rx.  The radio wraps payloads into packets:
+Runs inside the robot's namespace (e.g. /rover_1). Local applications publish
+payloads on  mesh/tx_app  and receive peer traffic on  mesh/rx.  The radio
+wraps payloads into packets:
 
     {"src": "rover_1", "seq": 42, "ttl": 4, "path": ["rover_1"],
      "type": "BEACON", "data": {...}}
 
-and puts them "on the air" (<ns>/mesh/air_tx). The radio_channel node models
-RF propagation and delivers packets only to radios within range
-(<ns>/mesh/air_rx). A radio that hears a packet it has not seen before
-delivers it to its local apps AND re-broadcasts it with ttl-1 — this is the
-relay behaviour that turns every rover into a network node. Packets reach
-out-of-range robots only by hopping through intermediates; the "path" field
-records the actual route taken.
+and puts them "on the air" (mesh/air_tx). The radio_channel node models RF
+propagation and delivers packets only to radios that can hear them
+(mesh/air_rx). A radio that hears a packet it has not seen before delivers
+it to its local apps AND re-broadcasts it with ttl-1 — the relay behaviour
+that turns every rover into a network node. Packets reach out-of-range
+robots only by hopping through intermediates; "path" records the route.
 """
 import json
 
@@ -25,21 +24,19 @@ from std_msgs.msg import String
 class MeshRadio(Node):
     def __init__(self):
         super().__init__('mesh_radio')
-        self.declare_parameter('robot', 'rover_1')
-        self.declare_parameter('ttl', 4)
-        self.me = self.get_parameter('robot').value
-        self.default_ttl = int(self.get_parameter('ttl').value)
+        self.declare_parameter('default_ttl', 4)
+        self.me = self.get_namespace().strip('/')
+        self.default_ttl = int(self.get_parameter('default_ttl').value)
 
         self.seq = 0
         self.seen = {}          # (src, seq) -> stamp sec
         self.stats = {'tx': 0, 'rx': 0, 'relayed': 0, 'dup_dropped': 0}
 
-        ns = f'/{self.me}/mesh'
-        self.pub_air = self.create_publisher(String, f'{ns}/air_tx', 50)
-        self.pub_local = self.create_publisher(String, f'{ns}/rx', 50)
-        self.create_subscription(String, f'{ns}/tx_app', self.on_app_tx, 50)
-        self.create_subscription(String, f'{ns}/air_rx', self.on_air_rx, 50)
-        self.pub_stats = self.create_publisher(String, f'{ns}/stats', 5)
+        self.pub_air = self.create_publisher(String, 'mesh/air_tx', 50)
+        self.pub_local = self.create_publisher(String, 'mesh/rx', 50)
+        self.create_subscription(String, 'mesh/tx_app', self.on_app_tx, 50)
+        self.create_subscription(String, 'mesh/air_rx', self.on_air_rx, 50)
+        self.pub_stats = self.create_publisher(String, 'mesh/stats', 5)
         self.create_timer(2.0, self.publish_stats)
         self.create_timer(10.0, self.gc_seen)
 

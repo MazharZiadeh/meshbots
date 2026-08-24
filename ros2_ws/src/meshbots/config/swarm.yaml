@@ -1,0 +1,15 @@
+# Squadron behaviour: leader election, formation, delivery auctions.
+/**/swarm:
+  ros__parameters:
+    beacon_period: 0.5       # s between BEACON broadcasts
+    peer_timeout: 3.0        # s without a beacon before a peer counts as dead
+    arrive_radius: 2.2       # m — leader "at objective" (squadron stops short)
+    dock_radius: 0.55        # m — auction winner docking tolerance
+    dwell: 3.0               # s spent "delivering" on the pad
+    deliver_timeout: 60.0    # s before a stalled delivery re-auctions
+    bid_period: 1.0          # s between BID broadcasts during an auction
+    bid_fresh: 2.6           # s a received bid stays valid
+    auction_quiet: 3.0       # s to wait for everyone's bids before acting
+    load_penalty: 8.0        # m added to a bid per delivery already made
+    # Follower wedge offsets in the leader frame, flattened (x, y) pairs.
+    slots_flat: [-1.9, 1.5, -1.9, -1.5, -3.4, 0.0]

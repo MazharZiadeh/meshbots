@@ -1,10 +1,12 @@
-"""Per-robot reactive navigator.
+"""Per-robot reactive navigator (runs inside the robot's namespace).
 
 Potential-field local planner: attractive pull toward the current goal,
 repulsive push from lidar returns, converted to unicycle (v, w) commands.
 Teammates are avoided for free — they show up on lidar like any obstacle.
-Stops when the goal goes stale (>1.5 s without a refresh) so higher layers
-"hold" a robot simply by not publishing; includes a wiggle-out stuck escape.
+Stops when the goal goes stale so higher layers "hold" a robot simply by
+not publishing; includes a wiggle-out stuck escape.
+
+All gains live in config/navigation.yaml.
 """
 import math
 
@@ -14,22 +16,18 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist
 from sensor_msgs.msg import LaserScan
 
-GOAL_STALE = 1.5
-STOP_DIST = 0.35
-V_MAX = 0.8
-W_MAX = 1.8
-REPULSE_R = 1.6
-REPULSE_K = 1.4
-STUCK_WINDOW = 5.0
-STUCK_DIST = 0.08
-WIGGLE_T = 1.6
-
 
 class Navigator(Node):
     def __init__(self):
         super().__init__('navigator')
-        self.declare_parameter('robot', 'rover_1')
-        self.me = self.get_parameter('robot').value
+        p = self.declare_parameters('', [
+            ('v_max', 0.8), ('w_max', 1.8), ('stop_dist', 0.35),
+            ('goal_stale', 1.5), ('repulse_radius', 1.6),
+            ('repulse_gain', 1.4), ('stuck_window', 5.0),
+            ('stuck_dist', 0.08), ('wiggle_time', 1.6)])
+        (self.v_max, self.w_max, self.stop_dist, self.goal_stale,
+         self.repulse_r, self.repulse_k, self.stuck_window,
+         self.stuck_dist, self.wiggle_t) = [x.value for x in p]
 
         self.pose = None
         self.goal = None
@@ -39,11 +37,10 @@ class Navigator(Node):
         self.wiggle_until = 0.0
         self.wiggle_sign = 1.0
 
-        ns = f'/{self.me}'
-        self.pub_cmd = self.create_publisher(Twist, f'{ns}/cmd_vel', 10)
-        self.create_subscription(PoseStamped, f'{ns}/pose', self.on_pose, 20)
-        self.create_subscription(PoseStamped, f'{ns}/goal', self.on_goal, 10)
-        self.create_subscription(LaserScan, f'{ns}/scan', self.on_scan, 5)
+        self.pub_cmd = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.create_subscription(PoseStamped, 'pose', self.on_pose, 20)
+        self.create_subscription(PoseStamped, 'goal', self.on_goal, 10)
+        self.create_subscription(LaserScan, 'scan', self.on_scan, 5)
         self.create_timer(0.1, self.tick)
 
     def now(self):
@@ -68,7 +65,7 @@ class Navigator(Node):
     def tick(self):
         t = self.now()
         if (self.pose is None or self.goal is None
-                or t - self.goal_t > GOAL_STALE):
+                or t - self.goal_t > self.goal_stale):
             self.stop()
             return
 
@@ -76,23 +73,23 @@ class Navigator(Node):
         gx, gy = self.goal
         dx, dy = gx - x, gy - y
         dist = math.hypot(dx, dy)
-        if dist < STOP_DIST:
+        if dist < self.stop_dist:
             self.stop()
             return
 
         # Stuck detection -> reverse-and-turn wiggle.
         self.track.append((t, x, y))
-        self.track = [p for p in self.track if t - p[0] < STUCK_WINDOW]
+        self.track = [p for p in self.track if t - p[0] < self.stuck_window]
         if t < self.wiggle_until:
             cmd = Twist()
             cmd.linear.x = -0.25
             cmd.angular.z = self.wiggle_sign * 1.2
             self.pub_cmd.publish(cmd)
             return
-        if len(self.track) > 20 and t - self.track[0][0] > STUCK_WINDOW * 0.9:
+        if len(self.track) > 20 and t - self.track[0][0] > self.stuck_window * 0.9:
             moved = math.hypot(x - self.track[0][1], y - self.track[0][2])
-            if moved < STUCK_DIST:
-                self.wiggle_until = t + WIGGLE_T
+            if moved < self.stuck_dist:
+                self.wiggle_until = t + self.wiggle_t
                 self.wiggle_sign = -self.wiggle_sign
                 self.track = []
                 return
@@ -109,19 +106,19 @@ class Navigator(Node):
             r = np.asarray(self.scan.ranges, dtype=np.float32)
             a = self.scan.angle_min + np.arange(len(r)) * self.scan.angle_increment
             valid = np.isfinite(r) & (r > self.scan.range_min)
-            near = valid & (r < REPULSE_R)
+            near = valid & (r < self.repulse_r)
             if near.any():
                 rr, aa = r[near], a[near]
                 min_clear = float(rr.min())
-                w = REPULSE_K * (REPULSE_R - rr) ** 2 / (rr + 0.05) / len(rr)
+                w = self.repulse_k * (self.repulse_r - rr) ** 2 / (rr + 0.05) / len(rr)
                 fx += float(np.sum(-w * np.cos(aa)))
                 fy += float(np.sum(-w * np.sin(aa)))
 
         heading_err = math.atan2(fy, fx)
         cmd = Twist()
-        cmd.angular.z = max(-W_MAX, min(W_MAX, 2.2 * heading_err))
+        cmd.angular.z = max(-self.w_max, min(self.w_max, 2.2 * heading_err))
         if abs(heading_err) < math.pi / 2:
-            speed = V_MAX * math.cos(heading_err) * min(1.0, dist / 1.5)
+            speed = self.v_max * math.cos(heading_err) * min(1.0, dist / 1.5)
             if min_clear < 0.6:
                 speed *= max(0.15, (min_clear - 0.25) / 0.35)
             cmd.linear.x = max(0.0, speed)

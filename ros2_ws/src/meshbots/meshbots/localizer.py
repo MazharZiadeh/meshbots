@@ -1,4 +1,6 @@
 """Per-robot cooperative localizer — communication-as-sensing.
+Runs inside the robot's namespace; noise character and EKF tuning live in
+config/localization.yaml.
 
 Wheel odometry is deliberately degraded with per-robot bias + noise (in sim
 the encoders are too perfect for localization to be a real problem). Three
@@ -20,16 +22,17 @@ long) — lidar informing RF.
 
 The same physics is exploited in reverse for mapping: when a link reads
 MORE loss than free space predicts for the estimated geometry, something is
-standing between the robots. Those excess-loss rays are published on
-<ns>/rf_ray and painted by the mapper as RF-shadow evidence — the mesh
-mapping what lidar has not seen. Ground truth (<ns>/pose_gt) is published
-for evaluation only; no behaviour consumes it.
+standing between the robots. Those excess-loss rays are published on rf_ray
+and painted by the mapper as RF-shadow evidence — the mesh mapping what
+lidar has not seen. Ground truth (pose_gt) is published for evaluation
+only; no behaviour consumes it.
 """
 import csv
 import json
 import math
 import os
 import random
+import zlib
 
 import numpy as np
 import rclpy
@@ -41,11 +44,6 @@ from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 
 from . import rf_model
 
-LOC_PERIOD = 0.5        # own pose broadcast over mesh
-MAX_CORRECTION = 0.6    # cap on a single EKF position update (m)
-EXCESS_DB = 6.0         # excess loss above this (3-sigma of shadowing noise)
-INNOV_GATE = 4.0        # chi gate in sigmas
-
 
 def yaw_of(q):
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y),
@@ -55,24 +53,32 @@ def yaw_of(q):
 class Localizer(Node):
     def __init__(self):
         super().__init__('localizer')
-        self.declare_parameter('robot', 'rover_1')
-        self.declare_parameter('spawn', [0.0, 0.0, 0.0])
-        self.declare_parameter('anchors', [0.0])   # flat x,y list of pad tags
-        self.declare_parameter('rf_factors', True)
-        self.declare_parameter('eval_dir', '/tmp/meshbots_eval')
-        self.me = self.get_parameter('robot').value
-        self.spawn = list(self.get_parameter('spawn').value)
-        aflat = list(self.get_parameter('anchors').value)
+        self.me = self.get_namespace().strip('/')
+        p = self.declare_parameters('', [
+            ('spawn', [0.0, 0.0, 0.0]),
+            ('anchors', [0.0]),          # flat x,y list of pad tags
+            ('rf_factors', True),
+            ('eval_dir', '/tmp/meshbots_eval'),
+            ('loc_period', 0.5),
+            ('bias_v_min', 0.04), ('bias_v_max', 0.09), ('bias_w_max', 0.03),
+            ('sigma_v', 0.04), ('sigma_w', 0.03), ('compass_sigma', 0.02),
+            ('process_gain', 0.09), ('max_correction', 0.6),
+            ('innovation_gate', 4.0), ('max_range_factor', 14.0),
+            ('excess_db', 6.0)])
+        (self.spawn, aflat, self.rf_on, eval_dir, loc_period,
+         bias_v_min, bias_v_max, bias_w_max, self.sigma_v, self.sigma_w,
+         self.compass_sigma, self.process_gain, self.max_correction,
+         self.innov_gate, self.max_range, self.excess_db) = [x.value for x in p]
         self.anchors = {f'pad_{i}': (aflat[2 * i], aflat[2 * i + 1])
                         for i in range(len(aflat) // 2)}
-        self.rf_on = bool(self.get_parameter('rf_factors').value)
 
-        # Deterministic per-robot noise character.
-        self.rng = random.Random(hash(self.me) & 0xffffffff)
-        # Miscalibrated wheel radius / slip: strong enough that dead
-        # reckoning genuinely drifts metres over a mission.
-        self.bias_v = self.rng.uniform(0.04, 0.09) * self.rng.choice([-1, 1])
-        self.bias_w = self.rng.uniform(-0.03, 0.03)
+        # Deterministic per-robot noise character (crc32, not hash():
+        # Python string hashes are randomized per process, which would make
+        # every run draw different biases and break reproducibility).
+        self.rng = random.Random(zlib.crc32(self.me.encode()))
+        self.bias_v = (self.rng.uniform(bias_v_min, bias_v_max)
+                       * self.rng.choice([-1, 1]))
+        self.bias_w = self.rng.uniform(-bias_w_max, bias_w_max)
 
         sx, sy, syaw = self.spawn
         self.gt = None                      # (x, y, yaw)
@@ -88,16 +94,14 @@ class Localizer(Node):
         self.updates_applied = 0
         self.updates_gated = 0
 
-        ns = f'/{self.me}'
-        self.pub_pose = self.create_publisher(PoseStamped, f'{ns}/pose', 20)
-        self.pub_gt = self.create_publisher(PoseStamped, f'{ns}/pose_gt', 20)
-        self.pub_dr = self.create_publisher(PoseStamped, f'{ns}/pose_dr', 20)
-        self.pub_ray = self.create_publisher(String, f'{ns}/rf_ray', 20)
-        self.pub_mesh = self.create_publisher(String, f'{ns}/mesh/tx_app', 20)
-        self.create_subscription(Odometry, f'{ns}/odom', self.on_odom, 20)
-        self.create_subscription(String, f'{ns}/mesh/rx', self.on_mesh, 80)
-        self.create_subscription(OccupancyGrid, f'{ns}/merged_map',
-                                 self.on_map, 2)
+        self.pub_pose = self.create_publisher(PoseStamped, 'pose', 20)
+        self.pub_gt = self.create_publisher(PoseStamped, 'pose_gt', 20)
+        self.pub_dr = self.create_publisher(PoseStamped, 'pose_dr', 20)
+        self.pub_ray = self.create_publisher(String, 'rf_ray', 20)
+        self.pub_mesh = self.create_publisher(String, 'mesh/tx_app', 20)
+        self.create_subscription(Odometry, 'odom', self.on_odom, 20)
+        self.create_subscription(String, 'mesh/rx', self.on_mesh, 80)
+        self.create_subscription(OccupancyGrid, 'merged_map', self.on_map, 2)
 
         self.tfb = TransformBroadcaster(self)
         stfb = StaticTransformBroadcaster(self)
@@ -109,9 +113,8 @@ class Localizer(Node):
         t.transform.rotation.w = 1.0
         stfb.sendTransform(t)
 
-        self.create_timer(LOC_PERIOD, self.broadcast_loc)
+        self.create_timer(loc_period, self.broadcast_loc)
 
-        eval_dir = self.get_parameter('eval_dir').value
         self.csv = None
         if eval_dir:
             os.makedirs(eval_dir, exist_ok=True)
@@ -148,10 +151,12 @@ class Localizer(Node):
         # What the encoders/gyro "measure": biased + noisy twist.
         v = msg.twist.twist.linear.x
         w = msg.twist.twist.angular.z
-        v_m = v * (1.0 + self.bias_v) + self.rng.gauss(0.0, 0.04 * abs(v) + 0.003)
-        w_m = w * (1.0 + self.bias_w) + self.rng.gauss(0.0, 0.03 * abs(w) + 0.003)
+        v_m = (v * (1.0 + self.bias_v)
+               + self.rng.gauss(0.0, self.sigma_v * abs(v) + 0.003))
+        w_m = (w * (1.0 + self.bias_w)
+               + self.rng.gauss(0.0, self.sigma_w * abs(w) + 0.003))
         # Magnetometer: absolute yaw, noisy.
-        self.compass = self.gt[2] + self.rng.gauss(0.0, 0.02)
+        self.compass = self.gt[2] + self.rng.gauss(0.0, self.compass_sigma)
 
         # Track A: pure DR.
         self.dr[2] += w_m * dt
@@ -164,7 +169,7 @@ class Localizer(Node):
         self.est_yaw = self.compass
         self.est[0] += v_m * dt * math.cos(self.compass)
         self.est[1] += v_m * dt * math.sin(self.compass)
-        q = (0.09 * abs(v_m) * dt + 0.001) ** 2
+        q = (self.process_gain * abs(v_m) * dt + 0.001) ** 2
         self.P += np.eye(2) * q
 
         self.publish_poses(msg.header.stamp)
@@ -217,7 +222,7 @@ class Localizer(Node):
         ex, ey = float(self.est[0]), float(self.est[1])
         d_geom = math.hypot(ex - px, ey - py)
         excess = rf_model.free_space_rssi(d_geom) - rssi
-        if excess > EXCESS_DB and d_geom > 1.0:
+        if excess > self.excess_db and d_geom > 1.0:
             self.pub_ray.publish(String(data=json.dumps(
                 {'a': [round(ex, 2), round(ey, 2)],
                  'b': [round(px, 2), round(py, 2)],
@@ -226,7 +231,7 @@ class Localizer(Node):
         if not self.rf_on:
             return
         d_hat, sigma = rf_model.rssi_to_range(rssi)
-        if d_hat > 14.0 or d_geom < 0.5:
+        if d_hat > self.max_range or d_geom < 0.5:
             return
         if self.ray_blocked(ex, ey, px, py):
             self.updates_gated += 1
@@ -238,14 +243,14 @@ class Localizer(Node):
         R = sigma * sigma + peer_var
         S = float(H @ self.P @ H) + R
         innov = d_hat - d_geom
-        if innov * innov > INNOV_GATE ** 2 * S:
+        if innov * innov > self.innov_gate ** 2 * S:
             self.updates_gated += 1
             return
         K = (self.P @ H) / S
         step = K * innov
         norm = float(np.hypot(step[0], step[1]))
-        if norm > MAX_CORRECTION:
-            step *= MAX_CORRECTION / norm
+        if norm > self.max_correction:
+            step *= self.max_correction / norm
         self.est += step
         self.P = (np.eye(2) - np.outer(K, H)) @ self.P
         self.P += np.eye(2) * 1e-6

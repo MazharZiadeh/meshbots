@@ -1,0 +1,12 @@
+# Reactive navigator: potential-field go-to-goal with lidar repulsion.
+/**/navigator:
+  ros__parameters:
+    v_max: 0.8               # m/s
+    w_max: 1.8               # rad/s
+    stop_dist: 0.35          # m — goal reached
+    goal_stale: 1.5          # s without a goal refresh -> hold position
+    repulse_radius: 1.6      # m — lidar returns closer than this push back
+    repulse_gain: 1.4
+    stuck_window: 5.0        # s of little movement -> stuck
+    stuck_dist: 0.08         # m
+    wiggle_time: 1.6         # s of reverse-and-turn escape

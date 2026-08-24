@@ -1,114 +1,122 @@
-"""Bring up the whole hive: Gazebo arena, three rovers, per-robot node stacks
-(mesh radio, mapper, swarm, navigator), the RF channel simulator and RViz.
+"""Top-level bring-up for the whole hive.
 
-    ros2 launch meshbots sim.launch.py            # with Gazebo GUI + RViz
+Composes (Husarion-tutorial style):
+  gazebo.launch.py     — arena world + /clock bridge
+  per robot            — model spawn + ros_gz bridge + the five-node stack,
+                         everything under the robot's namespace, all tunables
+                         from config/*.yaml
+  radio_channel        — the RF physics simulator (the only global node)
+  rviz.launch.py       — visualization
+
+The team roster lives in config/team.yaml; the mission in
+missions/delivery.yaml. Usage:
+
+    ros2 launch meshbots sim.launch.py            # Gazebo GUI + RViz
     ros2 launch meshbots sim.launch.py gui:=false # headless sim + RViz
     ros2 launch meshbots sim.launch.py rviz:=false gui:=false
 """
-import math
 import os
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
+from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
+                            OpaqueFunction)
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-ROBOTS = [
-    # name,      spawn x, y, yaw,   chassis color
-    ('rover_1', -11.0, -11.0, 0.785, '0.85 0.20 0.15'),
-    ('rover_2', -12.8, -10.2, 0.785, '0.15 0.50 0.90'),
-    ('rover_3', -10.2, -12.8, 0.785, '0.95 0.75 0.10'),
-]
+
+def spawn_robot(share, robot):
+    """Gazebo-facing actions for one robot: model + bridge."""
+    name = robot['name']
+    template = open(os.path.join(share, 'models', 'rover.sdf.template')).read()
+    sdf_path = f'/tmp/meshbots_{name}.sdf'
+    with open(sdf_path, 'w') as f:
+        f.write(template.replace('{NAME}', name)
+                        .replace('{COLOR}', robot['color']))
+    return [
+        Node(package='ros_gz_sim', executable='create',
+             name=f'spawn_{name}',
+             arguments=['-file', sdf_path, '-name', name,
+                        '-x', str(robot['x']), '-y', str(robot['y']),
+                        '-z', '0.12', '-Y', str(robot['yaw'])],
+             output='screen'),
+        Node(package='ros_gz_bridge', executable='parameter_bridge',
+             namespace=name, name='bridge',
+             arguments=[
+                 f'/model/{name}/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
+                 f'/model/{name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+                 f'/model/{name}/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+             ],
+             remappings=[
+                 (f'/model/{name}/cmd_vel', f'/{name}/cmd_vel'),
+                 (f'/model/{name}/odometry', f'/{name}/odom'),
+                 (f'/model/{name}/scan', f'/{name}/scan'),
+             ],
+             parameters=[{'use_sim_time': True}],
+             output='screen'),
+    ]
+
+
+def robot_stack(share, robot, mission):
+    """The five per-robot nodes, namespaced, configured from config/*.yaml."""
+    name = robot['name']
+    cfg = lambda f: os.path.join(share, 'config', f)  # noqa: E731
+    targets_flat = [float(v) for xy in mission['targets'] for v in xy]
+    base = [float(v) for v in mission['base']]
+    sim_time = {'use_sim_time': True}
+
+    stacks = [
+        ('mesh_radio', cfg('mesh.yaml'), {}),
+        ('localizer', cfg('localization.yaml'),
+         {'spawn': [robot['x'], robot['y'], robot['yaw']],
+          'anchors': targets_flat}),
+        ('mapper', cfg('mapping.yaml'), {}),
+        ('swarm', cfg('swarm.yaml'),
+         {'targets': targets_flat, 'base': base}),
+        ('navigator', cfg('navigation.yaml'), {}),
+    ]
+    return [
+        Node(package='meshbots', executable=exe,
+             namespace=name, name=exe,
+             parameters=[cfg_file, {**overrides, **sim_time}],
+             output='screen')
+        for exe, cfg_file, overrides in stacks
+    ]
 
 
 def setup(context, *args, **kwargs):
     share = get_package_share_directory('meshbots')
-    world = os.path.join(share, 'worlds', 'arena.sdf')
-    template = open(os.path.join(share, 'models', 'rover.sdf.template')).read()
+    team = yaml.safe_load(open(os.path.join(share, 'config', 'team.yaml')))
     mission = yaml.safe_load(
         open(os.path.join(share, 'missions', 'delivery.yaml')))
+    robots = team['robots']
     targets_flat = [float(v) for xy in mission['targets'] for v in xy]
-    base = [float(v) for v in mission['base']]
-    use_sim_time = {'use_sim_time': True}
 
-    gui = LaunchConfiguration('gui').perform(context).lower() == 'true'
-    actions = []
+    actions = [IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(share, 'launch', 'gazebo.launch.py')),
+        launch_arguments={'gui': LaunchConfiguration('gui')}.items())]
 
-    gz_cmd = ['gz', 'sim', '-r', world]
-    if not gui:
-        gz_cmd = ['gz', 'sim', '-r', '-s', '--headless-rendering', world]
-    actions.append(ExecuteProcess(cmd=gz_cmd, output='screen'))
+    for robot in robots:
+        actions += spawn_robot(share, robot)
+        actions += robot_stack(share, robot, mission)
 
+    spawns_flat = [v for r in robots for v in (r['x'], r['y'], r['yaw'])]
     actions.append(Node(
-        package='ros_gz_bridge', executable='parameter_bridge',
-        name='clock_bridge',
-        arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
-        output='screen'))
-
-    spawns_flat = []
-    for name, sx, sy, syaw, color in ROBOTS:
-        spawns_flat += [sx, sy, syaw]
-        sdf_path = f'/tmp/meshbots_{name}.sdf'
-        with open(sdf_path, 'w') as f:
-            f.write(template.replace('{NAME}', name).replace('{COLOR}', color))
-
-        actions.append(Node(
-            package='ros_gz_sim', executable='create',
-            name=f'spawn_{name}',
-            arguments=['-file', sdf_path, '-name', name,
-                       '-x', str(sx), '-y', str(sy), '-z', '0.12',
-                       '-Y', str(syaw)],
-            output='screen'))
-
-        actions.append(Node(
-            package='ros_gz_bridge', executable='parameter_bridge',
-            name=f'bridge_{name}',
-            arguments=[
-                f'/model/{name}/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
-                f'/model/{name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
-                f'/model/{name}/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            ],
-            remappings=[
-                (f'/model/{name}/cmd_vel', f'/{name}/cmd_vel'),
-                (f'/model/{name}/odometry', f'/{name}/odom'),
-                (f'/model/{name}/scan', f'/{name}/scan'),
-            ],
-            parameters=[use_sim_time],
-            output='screen'))
-
-        for pkg_exec, extra in [
-            ('mesh_radio', {}),
-            ('localizer', {'spawn': [sx, sy, syaw],
-                           'anchors': targets_flat,
-                           'eval_dir': '/tmp/meshbots_eval'}),
-            ('mapper', {}),
-            ('swarm', {'targets': targets_flat, 'base': base}),
-            ('navigator', {}),
-        ]:
-            actions.append(Node(
-                package='meshbots', executable=pkg_exec,
-                name=f'{pkg_exec}_{name}',
-                parameters=[{'robot': name, **extra, **use_sim_time}],
-                output='screen'))
-
-    actions.append(Node(
-        package='meshbots', executable='radio_channel',
-        name='radio_channel',
-        parameters=[{'robots': [r[0] for r in ROBOTS],
+        package='meshbots', executable='radio_channel', name='radio_channel',
+        parameters=[{'robots': [r['name'] for r in robots],
                      'spawns': spawns_flat,
                      'anchors': targets_flat,
-                     **use_sim_time}],
+                     'use_sim_time': True}],
         output='screen'))
 
-    actions.append(Node(
-        package='rviz2', executable='rviz2',
-        arguments=['-d', os.path.join(share, 'config', 'mesh.rviz')],
-        parameters=[use_sim_time],
-        condition=IfCondition(LaunchConfiguration('rviz')),
-        output='screen'))
+    actions.append(IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(share, 'launch', 'rviz.launch.py')),
+        condition=IfCondition(LaunchConfiguration('rviz'))))
 
     return actions
 

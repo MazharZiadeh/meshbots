@@ -1,0 +1,10 @@
+# Collaborative occupancy mapper + RF-shadow layer.
+/**/mapper:
+  ros__parameters:
+    resolution: 0.15         # m per cell
+    size_m: 32.0             # grid side length (m), centred on origin
+    origin: -16.0            # world coordinate of grid corner (x and y)
+    scan_period: 0.3         # s — min time between processed scans
+    patch_cell_cap: 3000     # max changed cells per mesh patch message
+    rf_vote_threshold: 4.0   # accumulated excess-loss votes -> suspected cell
+    suspect_value: 60        # occupancy value painted for RF-suspected cells

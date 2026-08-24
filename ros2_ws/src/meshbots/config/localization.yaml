@@ -1,0 +1,20 @@
+# Cooperative localizer: degraded odometry + RSSI range-factor EKF.
+/**/localizer:
+  ros__parameters:
+    rf_factors: true         # ablation switch: false = compass DR only
+    eval_dir: /tmp/meshbots_eval   # "" disables CSV logging
+    loc_period: 0.5          # s between own pose broadcasts over the mesh
+    # Injected odometry degradation (per-robot bias drawn from these ranges):
+    bias_v_min: 0.04         # |velocity scale bias| lower bound
+    bias_v_max: 0.09         # |velocity scale bias| upper bound
+    bias_w_max: 0.03         # yaw-rate scale bias bound (+/-)
+    sigma_v: 0.04            # velocity noise, fraction of |v|
+    sigma_w: 0.03            # yaw-rate noise, fraction of |w|
+    compass_sigma: 0.02      # rad — magnetometer yaw noise
+    # EKF:
+    process_gain: 0.09       # process noise growth per metre travelled
+    max_correction: 0.6      # m — cap on one range-update step
+    innovation_gate: 4.0     # sigmas
+    max_range_factor: 14.0   # m — ignore weaker/further RSSI ranges
+    # RF-shadow evidence:
+    excess_db: 6.0           # dB above free-space prediction (3 sigma)

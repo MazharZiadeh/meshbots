@@ -36,6 +36,44 @@ global process is the RF propagation simulator, which models physics
 
 ---
 
+## Project layout
+
+Structured after the [Husarion ROS 2 tutorial](https://husarion.com/tutorials/ros2-tutorials/10-exploration/)
+conventions: one package, small composable launch files, every tunable in
+`config/*.yaml`, nothing hardcoded.
+
+```
+ros2_ws/src/meshbots/
+├── meshbots/            # the nodes (identical code on every rover)
+│   ├── mesh_radio.py    #   MANET flooding relay
+│   ├── localizer.py     #   cooperative localization (RSSI range factors)
+│   ├── mapper.py        #   collaborative grid + RF-shadow layer
+│   ├── swarm.py         #   election · formation · auctions · mission FSM
+│   ├── navigator.py     #   potential-field local planner
+│   ├── radio_channel.py #   the ONLY global node: RF physics ("the air")
+│   ├── rf_model.py      #   shared path-loss model (mirrors arena.sdf)
+│   └── eval_metrics.py  #   post-mission ATE evaluation
+├── launch/
+│   ├── sim.launch.py    # top-level bring-up (composes the two below)
+│   ├── gazebo.launch.py # world + clock bridge
+│   └── rviz.launch.py
+├── config/
+│   ├── team.yaml        # who exists and where they start
+│   ├── swarm.yaml       # formation slots, auction, timing
+│   ├── localization.yaml# odometry degradation + EKF tuning + rf ablation
+│   ├── mapping.yaml     # grid geometry, patch caps, RF-shadow thresholds
+│   ├── navigation.yaml  # planner gains
+│   └── mesh.yaml        # radio TTL
+├── rviz/meshbots.rviz
+├── worlds/arena.sdf
+├── models/rover.sdf.template
+└── missions/delivery.yaml   # the op order: targets + base
+```
+
+Each rover's stack runs under its own namespace (`/rover_1/swarm`,
+`/rover_1/mesh_radio`, …) with relative topics, so adding a fourth rover is
+one line in `config/team.yaml` plus a formation slot in `config/swarm.yaml`.
+
 ## Quick start
 
 ```bash

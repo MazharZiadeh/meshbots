@@ -1,0 +1,6 @@
+# The team roster — single source of truth for who exists and where they start.
+# Consumed by launch/sim.launch.py (not a ROS parameter file).
+robots:
+  - {name: rover_1, x: -11.0, y: -11.0, yaw: 0.785, color: "0.85 0.20 0.15"}
+  - {name: rover_2, x: -12.8, y: -10.2, yaw: 0.785, color: "0.15 0.50 0.90"}
+  - {name: rover_3, x: -10.2, y: -12.8, yaw: 0.785, color: "0.95 0.75 0.10"}
