@@ -69,8 +69,10 @@ class Localizer(Node):
 
         # Deterministic per-robot noise character.
         self.rng = random.Random(hash(self.me) & 0xffffffff)
-        self.bias_v = self.rng.uniform(-0.03, 0.03)
-        self.bias_w = self.rng.uniform(-0.02, 0.02)
+        # Miscalibrated wheel radius / slip: strong enough that dead
+        # reckoning genuinely drifts metres over a mission.
+        self.bias_v = self.rng.uniform(0.04, 0.09) * self.rng.choice([-1, 1])
+        self.bias_w = self.rng.uniform(-0.03, 0.03)
 
         sx, sy, syaw = self.spawn
         self.gt = None                      # (x, y, yaw)
@@ -146,8 +148,8 @@ class Localizer(Node):
         # What the encoders/gyro "measure": biased + noisy twist.
         v = msg.twist.twist.linear.x
         w = msg.twist.twist.angular.z
-        v_m = v * (1.0 + self.bias_v) + self.rng.gauss(0.0, 0.02 * abs(v) + 0.002)
-        w_m = w * (1.0 + self.bias_w) + self.rng.gauss(0.0, 0.02 * abs(w) + 0.002)
+        v_m = v * (1.0 + self.bias_v) + self.rng.gauss(0.0, 0.04 * abs(v) + 0.003)
+        w_m = w * (1.0 + self.bias_w) + self.rng.gauss(0.0, 0.03 * abs(w) + 0.003)
         # Magnetometer: absolute yaw, noisy.
         self.compass = self.gt[2] + self.rng.gauss(0.0, 0.02)
 
@@ -162,7 +164,7 @@ class Localizer(Node):
         self.est_yaw = self.compass
         self.est[0] += v_m * dt * math.cos(self.compass)
         self.est[1] += v_m * dt * math.sin(self.compass)
-        q = (0.05 * abs(v_m) * dt + 0.0005) ** 2
+        q = (0.09 * abs(v_m) * dt + 0.001) ** 2
         self.P += np.eye(2) * q
 
         self.publish_poses(msg.header.stamp)
