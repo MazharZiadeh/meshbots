@@ -1,0 +1,12 @@
+# Formation-as-Aperture planner: informative perturbation of wedge slots.
+# The trust_radius / dev_cost pair is the mission-vs-sensing Pareto knob.
+/**/formation_planner:
+  ros__parameters:
+    alpha: 1.0               # weight of predicted localization gain
+    beta: 0.004              # weight per unknown map cell a link crosses
+    dev_cost: 0.008          # cost per metre of deviation from the wedge
+    trust_radius: 2.2        # m — max slot perturbation
+    pdr_floor: 0.5           # never let the leader link drop below this PDR
+    max_link: 13.0           # m — links longer than this carry no value
+    hysteresis: 1.12         # new offset must beat current by 12%
+    period: 1.0              # s between planning cycles

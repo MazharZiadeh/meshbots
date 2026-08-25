@@ -35,6 +35,7 @@ setup(
             'mapper = meshbots.mapper:main',
             'swarm = meshbots.swarm:main',
             'navigator = meshbots.navigator:main',
+            'formation_planner = meshbots.formation_planner:main',
         ],
     },
 )

@@ -20,11 +20,12 @@ All inter-robot knowledge arrives via the mesh (possibly multi-hop):
 """
 import json
 import math
+import os
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, ColorRGBA
-from geometry_msgs.msg import PoseStamped, Vector3
+from geometry_msgs.msg import PointStamped, PoseStamped, Vector3
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -39,11 +40,13 @@ class Swarm(Node):
             ('dwell', 3.0), ('deliver_timeout', 60.0),
             ('bid_period', 1.0), ('bid_fresh', 2.6),
             ('auction_quiet', 3.0), ('load_penalty', 8.0),
-            ('slots_flat', [-1.9, 1.5, -1.9, -1.5, -3.4, 0.0])])
+            ('slots_flat', [-1.9, 1.5, -1.9, -1.5, -3.4, 0.0]),
+            ('max_slot_offset', 2.5), ('eval_dir', '')])
         (targets_flat, self.base, beacon_period, self.peer_timeout,
          self.arrive_r, self.dock_r, self.dwell, self.deliver_timeout,
          self.bid_period, self.bid_fresh, self.auction_quiet,
-         self.load_penalty, slots_flat) = [x.value for x in p]
+         self.load_penalty, slots_flat, self.max_offset,
+         self.eval_dir) = [x.value for x in p]
         self.targets = [(targets_flat[i], targets_flat[i + 1])
                         for i in range(0, len(targets_flat), 2)]
         self.slots = [(slots_flat[i], slots_flat[i + 1])
@@ -62,13 +65,18 @@ class Swarm(Node):
         self.my_deliveries = 0           # load-balancing term for the auction
         self._auction_tgt = None
         self._auction_t0 = 0.0
+        self.slot_offset = None          # (dx, dy) in leader frame + stamp
+        self.mission_logged = False
 
         self.pub_mesh = self.create_publisher(String, 'mesh/tx_app', 30)
         self.pub_goal = self.create_publisher(PoseStamped, 'goal', 10)
+        self.pub_slot = self.create_publisher(PoseStamped, 'slot_nominal', 10)
         self.pub_marks = self.create_publisher(MarkerArray, '/swarm/markers', 10)
         self.pub_status = self.create_publisher(String, 'swarm_status', 5)
         self.create_subscription(PoseStamped, 'pose', self.on_pose, 20)
         self.create_subscription(String, 'mesh/rx', self.on_mesh, 80)
+        self.create_subscription(PointStamped, 'slot_offset',
+                                 self.on_slot_offset, 10)
 
         self.create_timer(beacon_period, self.send_beacon)
         self.create_timer(0.2, self.tick)
@@ -164,6 +172,14 @@ class Swarm(Node):
             'me': self.me, 'leader': self.leader(), 'phase': self.phase,
             'tgt': self.tgt, 'done': sorted(self.done),
             'alive': self.alive()})))
+        # Evaluation hook: record when this robot learned the mission is done.
+        if (not self.mission_logged and self.eval_dir
+                and len(self.done) >= len(self.targets)):
+            self.mission_logged = True
+            os.makedirs(self.eval_dir, exist_ok=True)
+            with open(os.path.join(self.eval_dir,
+                                   f'mission_{self.me}.csv'), 'w') as f:
+                f.write(f't_complete\n{self.now():.1f}\n')
 
     def tick_leader(self):
         x, y, _ = self.pose
@@ -268,6 +284,10 @@ class Swarm(Node):
             self.delivered_sent += 1
             self.get_logger().info(f'{self.me}: DELIVERED target {self.tgt}')
 
+    def on_slot_offset(self, msg: PointStamped):
+        """Informative-formation planner's perturbation, in the leader frame."""
+        self.slot_offset = (msg.point.x, msg.point.y, self.now())
+
     def publish_formation_goal(self, leader_info):
         p = leader_info.get('p')
         if not p:
@@ -281,6 +301,27 @@ class Swarm(Node):
         c, s = math.cos(lyaw), math.sin(lyaw)
         gx = lx + c * slot[0] - s * slot[1]
         gy = ly + s * slot[0] + c * slot[1]
+
+        # Tell the formation planner where the nominal slot is (leader yaw in
+        # the orientation), then apply its clamped perturbation if fresh.
+        nom = PoseStamped()
+        nom.header.stamp = self.get_clock().now().to_msg()
+        nom.header.frame_id = 'map'
+        nom.pose.position.x = gx
+        nom.pose.position.y = gy
+        nom.pose.orientation.z = math.sin(lyaw / 2.0)
+        nom.pose.orientation.w = math.cos(lyaw / 2.0)
+        self.pub_slot.publish(nom)
+
+        if self.slot_offset is not None:
+            dx, dy, t = self.slot_offset
+            if self.now() - t < 3.0:
+                norm = math.hypot(dx, dy)
+                if norm > self.max_offset:
+                    dx *= self.max_offset / norm
+                    dy *= self.max_offset / norm
+                gx += c * dx - s * dy
+                gy += s * dx + c * dy
         self.publish_goal(gx, gy)
 
     def publish_goal(self, gx, gy):

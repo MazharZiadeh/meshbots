@@ -65,6 +65,14 @@ def read_run(run_dir):
             rx += int(rows[-1][2])
             relayed += int(rows[-1][3])
     out['mesh'] = (tx, rx, relayed)
+    # Mission completion time (sim s, median over robots; nan if truncated).
+    times = []
+    for path in glob.glob(os.path.join(run_dir, 'mission_*.csv')):
+        try:
+            times.append(float(open(path).read().splitlines()[1]))
+        except (OSError, IndexError, ValueError):
+            pass
+    out['t_mission'] = st.median(times) if times else float('nan')
     return out
 
 
@@ -75,17 +83,74 @@ def mean_std(vals):
     return st.mean(vals), (st.stdev(vals) if len(vals) > 1 else 0.0)
 
 
+def load_runs(base):
+    run_dirs = sorted(glob.glob(os.path.join(base, 'run_*')),
+                      key=lambda p: int(p.rsplit('_', 1)[-1]))
+    runs = [read_run(d) for d in run_dirs]
+    return [r for r in runs if not math.isnan(r['ate'][TRACKS[0][0]])]
+
+
+def compare(dir_a, dir_b, md):
+    """Paired A/B comparison of two same-seed campaigns."""
+    a_runs = {r['name']: r for r in load_runs(dir_a)}
+    b_runs = {r['name']: r for r in load_runs(dir_b)}
+    common = sorted(set(a_runs) & set(b_runs),
+                    key=lambda n: int(n.rsplit('_', 1)[-1]))
+    if not common:
+        print('no common seeds between the two campaigns')
+        return
+    la, lb = os.path.basename(dir_a.rstrip('/')), os.path.basename(dir_b.rstrip('/'))
+    fused = TRACKS[2][0]
+
+    def row(label, fa, unit='', better='lower'):
+        va = [fa(a_runs[n]) for n in common]
+        vb = [fa(b_runs[n]) for n in common]
+        ma, _ = mean_std(va)
+        mb, _ = mean_std(vb)
+        pairs = [(x, y) for x, y in zip(va, vb)
+                 if not (math.isnan(x) or math.isnan(y))]
+        wins = sum(1 for x, y in pairs
+                   if (y < x if better == 'lower' else y > x))
+        if md:
+            print(f'| {label} | {ma:.2f}{unit} | {mb:.2f}{unit} | '
+                  f'{wins}/{len(pairs)} |')
+        else:
+            print(f'{label:<26} {la}: {ma:7.2f}{unit}   {lb}: {mb:7.2f}{unit}'
+                  f'   B better in {wins}/{len(pairs)}')
+
+    print(f'# Paired comparison — {la} (A) vs {lb} (B), '
+          f'{len(common)} shared seeds' if md else
+          f'=== {la} vs {lb}, {len(common)} shared seeds ===')
+    if md:
+        print()
+        print(f'| metric | {la} | {lb} | B better |')
+        print('|---|---|---|---|')
+    row('fused ATE (m)', lambda r: r['ate'][fused], ' m')
+    row('coverage merged', lambda r: 100 * r['cov_merged'], '%',
+        better='higher')
+    row('mission time (s)', lambda r: r['t_mission'], ' s')
+    da = sum(1 for n in common if a_runs[n]['delivered'] == 3)
+    db_ = sum(1 for n in common if b_runs[n]['delivered'] == 3)
+    if md:
+        print(f'| missions 3/3 | {da}/{len(common)} | {db_}/{len(common)} | |')
+    else:
+        print(f'{"missions 3/3":<26} {la}: {da}/{len(common)}   '
+              f'{lb}: {db_}/{len(common)}')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dir', default='/tmp/meshbots_batch')
+    ap.add_argument('--compare', nargs=2, metavar=('DIR_A', 'DIR_B'))
     ap.add_argument('--plot', default='')
     ap.add_argument('--markdown', action='store_true')
     args, _ = ap.parse_known_args()
 
-    run_dirs = sorted(glob.glob(os.path.join(args.dir, 'run_*')),
-                      key=lambda p: int(p.rsplit('_', 1)[-1]))
-    runs = [read_run(d) for d in run_dirs]
-    runs = [r for r in runs if not math.isnan(r['ate'][TRACKS[0][0]])]
+    if args.compare:
+        compare(args.compare[0], args.compare[1], args.markdown)
+        return
+
+    runs = load_runs(args.dir)
     if not runs:
         print(f'no usable runs found under {args.dir}')
         return

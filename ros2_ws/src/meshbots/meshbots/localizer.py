@@ -39,7 +39,8 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from nav_msgs.msg import Odometry, OccupancyGrid
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from geometry_msgs.msg import (PoseStamped, PoseWithCovarianceStamped,
+                               TransformStamped)
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 
 from . import rf_model
@@ -99,6 +100,8 @@ class Localizer(Node):
         self.updates_gated = 0
 
         self.pub_pose = self.create_publisher(PoseStamped, 'pose', 20)
+        self.pub_cov = self.create_publisher(PoseWithCovarianceStamped,
+                                             'pose_cov', 10)
         self.pub_gt = self.create_publisher(PoseStamped, 'pose_gt', 20)
         self.pub_dr = self.create_publisher(PoseStamped, 'pose_dr', 20)
         self.pub_ray = self.create_publisher(String, 'rf_ray', 20)
@@ -283,6 +286,16 @@ class Localizer(Node):
     def publish_poses(self, stamp):
         self.pub_pose.publish(self.make_pose(stamp, self.est[0], self.est[1],
                                              self.est_yaw))
+        pc = PoseWithCovarianceStamped()
+        pc.header.stamp = stamp
+        pc.header.frame_id = 'map'
+        pc.pose.pose = self.make_pose(stamp, self.est[0], self.est[1],
+                                      self.est_yaw).pose
+        pc.pose.covariance[0] = float(self.P[0, 0])
+        pc.pose.covariance[1] = float(self.P[0, 1])
+        pc.pose.covariance[6] = float(self.P[1, 0])
+        pc.pose.covariance[7] = float(self.P[1, 1])
+        self.pub_cov.publish(pc)
         self.pub_dr.publish(self.make_pose(stamp, self.dr[0], self.dr[1],
                                            self.dr[2]))
         if self.gt is not None:

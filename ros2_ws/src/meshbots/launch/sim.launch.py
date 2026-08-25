@@ -79,7 +79,7 @@ def spawn_robot(share, robot):
     ]
 
 
-def robot_stack(share, robot, mission, seed, eval_dir, chassis):
+def robot_stack(share, robot, mission, seed, eval_dir, chassis, formation):
     """The five per-robot nodes, namespaced, configured from config/*.yaml."""
     name = robot['name']
     cfg = lambda f: os.path.join(share, 'config', f)  # noqa: E731
@@ -103,9 +103,13 @@ def robot_stack(share, robot, mission, seed, eval_dir, chassis):
           'noise_seed': seed, 'eval_dir': eval_dir}, odom_remap),
         ('mapper', cfg('mapping.yaml'), {'eval_dir': eval_dir}, scan_remap),
         ('swarm', cfg('swarm.yaml'),
-         {'targets': targets_flat, 'base': base}, []),
+         {'targets': targets_flat, 'base': base,
+          'eval_dir': eval_dir}, []),
         ('navigator', cfg('navigation.yaml'), nav_over, scan_remap),
     ]
+    if formation == 'informative':
+        stacks.append(('formation_planner', cfg('formation.yaml'),
+                       {'anchors': targets_flat}, []))
     return [
         Node(package='meshbots', executable=exe,
              namespace=name, name=exe,
@@ -126,6 +130,7 @@ def setup(context, *args, **kwargs):
     seed = int(LaunchConfiguration('seed').perform(context))
     eval_dir = LaunchConfiguration('eval_dir').perform(context)
     chassis = LaunchConfiguration('chassis').perform(context)
+    formation = LaunchConfiguration('formation').perform(context)
 
     actions = [IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -138,7 +143,8 @@ def setup(context, *args, **kwargs):
             actions += spawn_rosbot(robot)
         else:
             actions += spawn_robot(share, robot)
-        actions += robot_stack(share, robot, mission, seed, eval_dir, chassis)
+        actions += robot_stack(share, robot, mission, seed, eval_dir,
+                               chassis, formation)
 
     spawns_flat = [v for r in robots for v in (r['x'], r['y'], r['yaw'])]
     actions.append(Node(
@@ -166,6 +172,8 @@ def generate_launch_description():
         DeclareLaunchArgument('world', default_value=''),
         DeclareLaunchArgument('chassis', default_value='builtin',
                               choices=['builtin', 'rosbot']),
+        DeclareLaunchArgument('formation', default_value='fixed',
+                              choices=['fixed', 'informative']),
         DeclareLaunchArgument('seed', default_value='0'),
         DeclareLaunchArgument('eval_dir', default_value='/tmp/meshbots_eval'),
         OpaqueFunction(function=setup),
