@@ -23,9 +23,28 @@ from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
                             OpaqueFunction)
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.launch_description_sources import (AnyLaunchDescriptionSource,
+                                               PythonLaunchDescriptionSource)
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+
+def spawn_rosbot(robot):
+    """Spawn a Husarion ROSbot (built from source) instead of the built-in
+    rover: their namespace-aware spawn_robot.yaml brings up the model,
+    ros2_control stack, EKF and laser filter under the robot's namespace."""
+    from ament_index_python.packages import get_package_share_directory as gps
+    name = robot['name']
+    return [IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(
+            os.path.join(gps('rosbot_gazebo'), 'launch', 'spawn_robot.yaml')),
+        launch_arguments={
+            'namespace': name,
+            'robot_model': 'rosbot',
+            'rviz': 'False',
+            'x': str(robot['x']), 'y': str(robot['y']),
+            'z': '0.1', 'yaw': str(robot['yaw']),
+        }.items())]
 
 
 def spawn_robot(share, robot):
@@ -60,7 +79,7 @@ def spawn_robot(share, robot):
     ]
 
 
-def robot_stack(share, robot, mission):
+def robot_stack(share, robot, mission, seed, eval_dir, chassis):
     """The five per-robot nodes, namespaced, configured from config/*.yaml."""
     name = robot['name']
     cfg = lambda f: os.path.join(share, 'config', f)  # noqa: E731
@@ -68,22 +87,32 @@ def robot_stack(share, robot, mission):
     base = [float(v) for v in mission['base']]
     sim_time = {'use_sim_time': True}
 
+    # The ROSbot chassis differs from the built-in rover in three ways:
+    # odometry comes from its EKF, the usable lidar topic is the filtered
+    # one, and its ros2_control stack wants TwistStamped commands.
+    rosbot = chassis == 'rosbot'
+    odom_remap = [('odom', 'odometry/filtered')] if rosbot else []
+    scan_remap = [('scan', 'scan_filtered')] if rosbot else []
+    nav_over = {'cmd_vel_stamped': True} if rosbot else {}
+
     stacks = [
-        ('mesh_radio', cfg('mesh.yaml'), {}),
+        ('mesh_radio', cfg('mesh.yaml'), {'eval_dir': eval_dir}, []),
         ('localizer', cfg('localization.yaml'),
          {'spawn': [robot['x'], robot['y'], robot['yaw']],
-          'anchors': targets_flat}),
-        ('mapper', cfg('mapping.yaml'), {}),
+          'anchors': targets_flat,
+          'noise_seed': seed, 'eval_dir': eval_dir}, odom_remap),
+        ('mapper', cfg('mapping.yaml'), {'eval_dir': eval_dir}, scan_remap),
         ('swarm', cfg('swarm.yaml'),
-         {'targets': targets_flat, 'base': base}),
-        ('navigator', cfg('navigation.yaml'), {}),
+         {'targets': targets_flat, 'base': base}, []),
+        ('navigator', cfg('navigation.yaml'), nav_over, scan_remap),
     ]
     return [
         Node(package='meshbots', executable=exe,
              namespace=name, name=exe,
              parameters=[cfg_file, {**overrides, **sim_time}],
+             remappings=remaps,
              output='screen')
-        for exe, cfg_file, overrides in stacks
+        for exe, cfg_file, overrides, remaps in stacks
     ]
 
 
@@ -94,15 +123,22 @@ def setup(context, *args, **kwargs):
         open(os.path.join(share, 'missions', 'delivery.yaml')))
     robots = team['robots']
     targets_flat = [float(v) for xy in mission['targets'] for v in xy]
+    seed = int(LaunchConfiguration('seed').perform(context))
+    eval_dir = LaunchConfiguration('eval_dir').perform(context)
+    chassis = LaunchConfiguration('chassis').perform(context)
 
     actions = [IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(share, 'launch', 'gazebo.launch.py')),
-        launch_arguments={'gui': LaunchConfiguration('gui')}.items())]
+        launch_arguments={'gui': LaunchConfiguration('gui'),
+                          'world': LaunchConfiguration('world')}.items())]
 
     for robot in robots:
-        actions += spawn_robot(share, robot)
-        actions += robot_stack(share, robot, mission)
+        if chassis == 'rosbot':
+            actions += spawn_rosbot(robot)
+        else:
+            actions += spawn_robot(share, robot)
+        actions += robot_stack(share, robot, mission, seed, eval_dir, chassis)
 
     spawns_flat = [v for r in robots for v in (r['x'], r['y'], r['yaw'])]
     actions.append(Node(
@@ -110,6 +146,8 @@ def setup(context, *args, **kwargs):
         parameters=[{'robots': [r['name'] for r in robots],
                      'spawns': spawns_flat,
                      'anchors': targets_flat,
+                     'odom_topic': ('odometry/filtered'
+                                    if chassis == 'rosbot' else 'odom'),
                      'use_sim_time': True}],
         output='screen'))
 
@@ -125,5 +163,10 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('gui', default_value='true'),
         DeclareLaunchArgument('rviz', default_value='true'),
+        DeclareLaunchArgument('world', default_value=''),
+        DeclareLaunchArgument('chassis', default_value='builtin',
+                              choices=['builtin', 'rosbot']),
+        DeclareLaunchArgument('seed', default_value='0'),
+        DeclareLaunchArgument('eval_dir', default_value='/tmp/meshbots_eval'),
         OpaqueFunction(function=setup),
     ])

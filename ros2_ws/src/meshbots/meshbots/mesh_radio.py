@@ -14,7 +14,9 @@ it to its local apps AND re-broadcasts it with ttl-1 — the relay behaviour
 that turns every rover into a network node. Packets reach out-of-range
 robots only by hopping through intermediates; "path" records the route.
 """
+import csv
 import json
+import os
 
 import rclpy
 from rclpy.node import Node
@@ -25,8 +27,16 @@ class MeshRadio(Node):
     def __init__(self):
         super().__init__('mesh_radio')
         self.declare_parameter('default_ttl', 4)
+        self.declare_parameter('eval_dir', '')
         self.me = self.get_namespace().strip('/')
         self.default_ttl = int(self.get_parameter('default_ttl').value)
+        eval_dir = self.get_parameter('eval_dir').value
+        self.csv = None
+        if eval_dir:
+            os.makedirs(eval_dir, exist_ok=True)
+            self.csv = csv.writer(open(
+                os.path.join(eval_dir, f'{self.me}_mesh.csv'), 'w', newline=''))
+            self.csv.writerow(['t', 'tx', 'rx', 'relayed', 'dup_dropped'])
 
         self.seq = 0
         self.seen = {}          # (src, seq) -> stamp sec
@@ -87,6 +97,10 @@ class MeshRadio(Node):
 
     def publish_stats(self):
         self.pub_stats.publish(String(data=json.dumps(self.stats)))
+        if self.csv is not None:
+            self.csv.writerow([round(self.now_sec(), 1), self.stats['tx'],
+                               self.stats['rx'], self.stats['relayed'],
+                               self.stats['dup_dropped']])
 
     def gc_seen(self):
         cutoff = self.now_sec() - 30.0

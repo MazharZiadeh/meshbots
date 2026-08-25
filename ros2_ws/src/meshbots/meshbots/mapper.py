@@ -19,8 +19,10 @@ predicts. Cells along those inter-robot rays accumulate obstruction
 evidence; where lidar knows nothing but RF evidence is strong, the merged
 map shows a "suspected obstacle" and the layer is published raw on rf_map.
 """
+import csv
 import json
 import math
+import os
 
 import numpy as np
 import rclpy
@@ -45,10 +47,18 @@ class Mapper(Node):
         p = self.declare_parameters('', [
             ('resolution', 0.15), ('size_m', 32.0), ('origin', -16.0),
             ('scan_period', 0.3), ('patch_cell_cap', 3000),
-            ('rf_vote_threshold', 4.0), ('suspect_value', 60)])
+            ('rf_vote_threshold', 4.0), ('suspect_value', 60),
+            ('eval_dir', '')])
         (self.res, size_m, self.origin, self.scan_period, self.patch_cap,
-         self.rf_vote_t, self.suspect) = [x.value for x in p]
+         self.rf_vote_t, self.suspect, eval_dir) = [x.value for x in p]
         self.size = int(size_m / self.res)
+
+        self.csv = None
+        if eval_dir:
+            os.makedirs(eval_dir, exist_ok=True)
+            self.csv = csv.writer(open(
+                os.path.join(eval_dir, f'{self.me}_map.csv'), 'w', newline=''))
+            self.csv.writerow(['t', 'own_known', 'merged_known', 'total'])
 
         self.logodds = np.zeros((self.size, self.size), dtype=np.int16)
         self.state = np.full((self.size, self.size), -1, dtype=np.int8)
@@ -240,6 +250,13 @@ class Mapper(Node):
         hot = self.rf_votes > 0.5
         rf[hot] = np.clip(self.rf_votes[hot] * 20.0, 1, 100).astype(np.int8)
         self.pub_rf.publish(self.grid_msg(rf))
+
+        if self.csv is not None:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            self.csv.writerow([round(t, 1),
+                               int(np.count_nonzero(self.state != -1)),
+                               int(np.count_nonzero(merged != -1)),
+                               self.size * self.size])
 
 
 def main():

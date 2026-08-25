@@ -48,7 +48,8 @@ def main():
     ap.add_argument('--plot', default='')
     args, _ = ap.parse_known_args()
 
-    files = sorted(glob.glob(os.path.join(args.dir, 'rover_*.csv')))
+    files = sorted(p for p in glob.glob(os.path.join(args.dir, 'rover_*.csv'))
+                   if '_map' not in p and '_mesh' not in p)
     if not files:
         print(f'no logs found in {args.dir} — run a mission first')
         return

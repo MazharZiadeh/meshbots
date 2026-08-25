@@ -3,3 +3,7 @@ ros2_ws/install/
 ros2_ws/log/
 __pycache__/
 *.pyc
+
+# vendored external source (clone via scripts/get_rosbot_sources.sh)
+ros2_ws/src/rosbot_ros/
+ros2_ws/src/husarion_gz_worlds/

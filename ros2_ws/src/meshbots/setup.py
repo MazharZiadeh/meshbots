@@ -31,6 +31,7 @@ setup(
             'mesh_radio = meshbots.mesh_radio:main',
             'localizer = meshbots.localizer:main',
             'eval_metrics = meshbots.eval_metrics:main',
+            'batch_metrics = meshbots.batch_metrics:main',
             'mapper = meshbots.mapper:main',
             'swarm = meshbots.swarm:main',
             'navigator = meshbots.navigator:main',

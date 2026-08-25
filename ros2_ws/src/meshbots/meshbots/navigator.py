@@ -13,7 +13,7 @@ import math
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist, TwistStamped
 from sensor_msgs.msg import LaserScan
 
 
@@ -24,10 +24,11 @@ class Navigator(Node):
             ('v_max', 0.8), ('w_max', 1.8), ('stop_dist', 0.35),
             ('goal_stale', 1.5), ('repulse_radius', 1.6),
             ('repulse_gain', 1.4), ('stuck_window', 5.0),
-            ('stuck_dist', 0.08), ('wiggle_time', 1.6)])
+            ('stuck_dist', 0.08), ('wiggle_time', 1.6),
+            ('cmd_vel_stamped', False)])   # ros2_control chassis want TwistStamped
         (self.v_max, self.w_max, self.stop_dist, self.goal_stale,
          self.repulse_r, self.repulse_k, self.stuck_window,
-         self.stuck_dist, self.wiggle_t) = [x.value for x in p]
+         self.stuck_dist, self.wiggle_t, self.stamped) = [x.value for x in p]
 
         self.pose = None
         self.goal = None
@@ -37,11 +38,21 @@ class Navigator(Node):
         self.wiggle_until = 0.0
         self.wiggle_sign = 1.0
 
-        self.pub_cmd = self.create_publisher(Twist, 'cmd_vel', 10)
+        msg_type = TwistStamped if self.stamped else Twist
+        self.pub_cmd = self.create_publisher(msg_type, 'cmd_vel', 10)
         self.create_subscription(PoseStamped, 'pose', self.on_pose, 20)
         self.create_subscription(PoseStamped, 'goal', self.on_goal, 10)
         self.create_subscription(LaserScan, 'scan', self.on_scan, 5)
         self.create_timer(0.1, self.tick)
+
+    def send_cmd(self, twist):
+        if self.stamped:
+            msg = TwistStamped()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.twist = twist
+            self.pub_cmd.publish(msg)
+        else:
+            self.pub_cmd.publish(twist)
 
     def now(self):
         return self.get_clock().now().nanoseconds * 1e-9
@@ -59,7 +70,7 @@ class Navigator(Node):
         self.scan = msg
 
     def stop(self):
-        self.pub_cmd.publish(Twist())
+        self.send_cmd(Twist())
         self.track = []
 
     def tick(self):
@@ -84,7 +95,7 @@ class Navigator(Node):
             cmd = Twist()
             cmd.linear.x = -0.25
             cmd.angular.z = self.wiggle_sign * 1.2
-            self.pub_cmd.publish(cmd)
+            self.send_cmd(cmd)
             return
         if len(self.track) > 20 and t - self.track[0][0] > self.stuck_window * 0.9:
             moved = math.hypot(x - self.track[0][1], y - self.track[0][2])
@@ -122,7 +133,7 @@ class Navigator(Node):
             if min_clear < 0.6:
                 speed *= max(0.15, (min_clear - 0.25) / 0.35)
             cmd.linear.x = max(0.0, speed)
-        self.pub_cmd.publish(cmd)
+        self.send_cmd(cmd)
 
 
 def main():

@@ -38,6 +38,7 @@ class RadioChannel(Node):
         self.declare_parameter('robots', ['rover_1', 'rover_2', 'rover_3'])
         self.declare_parameter('spawns', [0.0, 0.0, 0.0] * 3)  # x,y,yaw each
         self.declare_parameter('anchors', [0.0])               # flat x,y pads
+        self.declare_parameter('odom_topic', 'odom')           # per-chassis
 
         self.robots = list(self.get_parameter('robots').value)
         flat = list(self.get_parameter('spawns').value)
@@ -56,8 +57,9 @@ class RadioChannel(Node):
             self.create_subscription(
                 String, f'/{r}/mesh/air_tx',
                 lambda m, sender=r: self.on_tx(sender, m), 50)
+            odom_topic = self.get_parameter('odom_topic').value
             self.create_subscription(
-                Odometry, f'/{r}/odom',
+                Odometry, f'/{r}/{odom_topic}',
                 lambda m, rr=r: self.on_odom(rr, m), 20)
 
         self.pub_links = self.create_publisher(MarkerArray, '/mesh/links', 5)

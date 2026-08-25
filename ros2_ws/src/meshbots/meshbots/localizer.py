@@ -59,13 +59,14 @@ class Localizer(Node):
             ('anchors', [0.0]),          # flat x,y list of pad tags
             ('rf_factors', True),
             ('eval_dir', '/tmp/meshbots_eval'),
+            ('noise_seed', 0),
             ('loc_period', 0.5),
             ('bias_v_min', 0.04), ('bias_v_max', 0.09), ('bias_w_max', 0.03),
             ('sigma_v', 0.04), ('sigma_w', 0.03), ('compass_sigma', 0.02),
             ('process_gain', 0.09), ('max_correction', 0.6),
             ('innovation_gate', 4.0), ('max_range_factor', 14.0),
             ('excess_db', 6.0)])
-        (self.spawn, aflat, self.rf_on, eval_dir, loc_period,
+        (self.spawn, aflat, self.rf_on, eval_dir, noise_seed, loc_period,
          bias_v_min, bias_v_max, bias_w_max, self.sigma_v, self.sigma_w,
          self.compass_sigma, self.process_gain, self.max_correction,
          self.innov_gate, self.max_range, self.excess_db) = [x.value for x in p]
@@ -75,7 +76,10 @@ class Localizer(Node):
         # Deterministic per-robot noise character (crc32, not hash():
         # Python string hashes are randomized per process, which would make
         # every run draw different biases and break reproducibility).
-        self.rng = random.Random(zlib.crc32(self.me.encode()))
+        # noise_seed varies the draw per Monte Carlo run while staying
+        # reproducible: same (robot, seed) -> same noise character.
+        self.rng = random.Random(
+            zlib.crc32(self.me.encode()) ^ (int(noise_seed) * 0x9E3779B1))
         self.bias_v = (self.rng.uniform(bias_v_min, bias_v_max)
                        * self.rng.choice([-1, 1]))
         self.bias_w = self.rng.uniform(-bias_w_max, bias_w_max)
