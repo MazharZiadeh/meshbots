@@ -41,11 +41,11 @@ class Swarm(Node):
             ('bid_period', 1.0), ('bid_fresh', 2.6),
             ('auction_quiet', 3.0), ('load_penalty', 8.0),
             ('slots_flat', [-1.9, 1.5, -1.9, -1.5, -3.4, 0.0]),
-            ('max_slot_offset', 2.5), ('eval_dir', '')])
+            ('max_slot_offset', 2.5), ('dock_rssi', -33.0), ('eval_dir', '')])
         (targets_flat, self.base, beacon_period, self.peer_timeout,
          self.arrive_r, self.dock_r, self.dwell, self.deliver_timeout,
          self.bid_period, self.bid_fresh, self.auction_quiet,
-         self.load_penalty, slots_flat, self.max_offset,
+         self.load_penalty, slots_flat, self.max_offset, self.dock_rssi,
          self.eval_dir) = [x.value for x in p]
         self.targets = [(targets_flat[i], targets_flat[i + 1])
                         for i in range(0, len(targets_flat), 2)]
@@ -67,6 +67,8 @@ class Swarm(Node):
         self._auction_t0 = 0.0
         self.slot_offset = None          # (dx, dy) in leader frame + stamp
         self.mission_logged = False
+        self.pad_contact_t = -1e9        # last time the target pad's chirp
+                                         # was heard at docking strength
 
         self.pub_mesh = self.create_publisher(String, 'mesh/tx_app', 30)
         self.pub_goal = self.create_publisher(PoseStamped, 'goal', 10)
@@ -130,6 +132,14 @@ class Swarm(Node):
                 self.bids[src] = (data.get('c', 1e9), self.now())
         elif mtype == 'DELIVERED':
             self.done.add(int(data.get('tgt', -1)))
+        elif mtype == 'ANCHOR':
+            # The pad's own chirp doubles as a docking sensor: heard this
+            # loud, we are physically on the pad no matter what the
+            # (possibly biased) position estimate believes.
+            rf = pkt.get('rf') or {}
+            if (src == f'pad_{self.tgt}'
+                    and rf.get('rssi', -1e9) >= self.dock_rssi):
+                self.pad_contact_t = self.now()
 
     # ---------------- pose ----------------
 
@@ -207,6 +217,9 @@ class Swarm(Node):
             if self.now() - self.deliver_since > self.deliver_timeout:
                 self.deliver_since = self.now()
                 self.bids = {}
+                self._auction_tgt = None   # re-arm the quiet period so the
+                                           # leader doesn't self-elect while
+                                           # fresh bids are still in flight
             self.run_auction_role()
 
         elif self.phase == 'RETURN':
@@ -267,9 +280,12 @@ class Swarm(Node):
             if leader_info is not None:
                 self.publish_formation_goal(leader_info)
             return
-        # I won the auction: dock on the pad and deliver.
+        # I won the auction: dock on the pad and deliver. Docked = my
+        # estimate is on the pad OR the pad's chirp confirms physical
+        # contact (robust to localization bias).
         d = math.hypot(x - tx, y - ty)
-        if d > self.dock_r:
+        pad_contact = self.now() - self.pad_contact_t < 2.5
+        if d > self.dock_r and not pad_contact:
             self.dock_since = None
             self.publish_goal(tx, ty)
             return

@@ -66,11 +66,16 @@ class Localizer(Node):
             ('sigma_v', 0.04), ('sigma_w', 0.03), ('compass_sigma', 0.02),
             ('process_gain', 0.09), ('max_correction', 0.6),
             ('innovation_gate', 4.0), ('max_range_factor', 14.0),
-            ('excess_db', 6.0)])
+            ('excess_db', 6.0),
+            ('peer_inflation', 2.0),   # inflate peer-factor R: our fusion
+                                       # double-counts correlated peer info
+            ('p_floor', 0.02)])        # covariance floor against the
+                                       # overconfidence that locks in bias
         (self.spawn, aflat, self.rf_on, eval_dir, noise_seed, loc_period,
          bias_v_min, bias_v_max, bias_w_max, self.sigma_v, self.sigma_w,
          self.compass_sigma, self.process_gain, self.max_correction,
-         self.innov_gate, self.max_range, self.excess_db) = [x.value for x in p]
+         self.innov_gate, self.max_range, self.excess_db,
+         self.peer_inflation, self.p_floor) = [x.value for x in p]
         self.anchors = {f'pad_{i}': (aflat[2 * i], aflat[2 * i + 1])
                         for i in range(len(aflat) // 2)}
 
@@ -244,10 +249,13 @@ class Localizer(Node):
             self.updates_gated += 1
             return
 
-        # Scalar EKF update: z = |x - p| + noise.
+        # Scalar EKF update: z = |x - p| + noise. Peer factors get their R
+        # inflated: peer estimates are correlated with ours (they were
+        # partly built from our own broadcasts), and treating them as
+        # independent double-counts information.
         dx, dy = ex - px, ey - py
         H = np.array([dx / d_geom, dy / d_geom])
-        R = sigma * sigma + peer_var
+        R = sigma * sigma + self.peer_inflation * peer_var
         S = float(H @ self.P @ H) + R
         innov = d_hat - d_geom
         if innov * innov > self.innov_gate ** 2 * S:
@@ -260,7 +268,10 @@ class Localizer(Node):
             step *= self.max_correction / norm
         self.est += step
         self.P = (np.eye(2) - np.outer(K, H)) @ self.P
-        self.P += np.eye(2) * 1e-6
+        # Covariance floor: with correlated updates the filter otherwise
+        # grows overconfident and a locked-in bias becomes uncorrectable.
+        self.P[0, 0] = max(self.P[0, 0], self.p_floor)
+        self.P[1, 1] = max(self.P[1, 1], self.p_floor)
         self.updates_applied += 1
 
     # ---------------- output ----------------

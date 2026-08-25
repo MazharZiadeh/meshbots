@@ -16,5 +16,8 @@
     max_correction: 0.6      # m — cap on one range-update step
     innovation_gate: 4.0     # sigmas
     max_range_factor: 14.0   # m — ignore weaker/further RSSI ranges
+    # Consistency (correlated-information) safeguards:
+    peer_inflation: 2.0      # multiply peer-factor R (double-counting guard)
+    p_floor: 0.02            # covariance floor per axis (m^2)
     # RF-shadow evidence:
     excess_db: 6.0           # dB above free-space prediction (3 sigma)

@@ -11,5 +11,6 @@
     bid_fresh: 2.6           # s a received bid stays valid
     auction_quiet: 3.0       # s to wait for everyone's bids before acting
     load_penalty: 8.0        # m added to a bid per delivery already made
+    dock_rssi: -33.0         # pad chirp this loud = physical dock contact
     # Follower wedge offsets in the leader frame, flattened (x, y) pairs.
     slots_flat: [-1.9, 1.5, -1.9, -1.5, -3.4, 0.0]
