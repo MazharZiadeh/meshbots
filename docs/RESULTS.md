@@ -1,4 +1,38 @@
-# Monte Carlo evaluation — 8 missions, seeds 1–8
+# Monte Carlo evaluation
+
+## Campaign 2 — Formation-as-Aperture paired A/B (8 + 8 missions, seeds 1–8)
+
+Same-seed arms on identical code: fixed wedge vs. informative formation
+perturbation (`formation:=informative`, trust radius 2.2 m).
+
+| metric | fixed wedge | informative | informative better |
+|---|---|---|---|
+| fused ATE (team mean) | 0.69 m | 0.66 m | 5/8 runs |
+| RF paired improvement (C vs B) | median 36%, 7/8 runs | **median 44%, 8/8 runs** | — |
+| merged-map coverage | 95.0% | 94.1% | 4/8 runs |
+| mission time (completed runs) | 127.5 s | 130.2 s | 0/5 runs |
+| missions 3/3 in window | 7/8 | 5/8 | — |
+
+**Verdict, stated plainly:** at this operating point the planner is *not* a
+net win. It demonstrably harvests more RF information — its arm shows the
+strongest RF correction of any campaign (median 44%, positive in all 8
+runs, minimum +6%) — but the extra maneuvering raises dead-reckoning error
+(pure-DR 2.16 m vs 1.86 m on identical seeds: more turning, more noise
+integrated) and costs mission-window completions. The harvested information
+roughly pays for the motion it induces, and no more. The mechanism works;
+the price is mispriced. Next experiment: sweep the trust radius / deviation
+cost to trace the mission-time-vs-information Pareto front — the harness
+makes each point one command.
+
+A secondary finding from the first (aborted) A/B attempt is documented in
+the paper draft §4.1: the planner amplified a filter-consistency flaw
+(correlated peer updates → overconfidence → locked-in bias → delivery
+docking livelock), fixed by covariance safeguards plus using the delivery
+pad's chirp as a physical docking sensor.
+
+---
+
+## Campaign 1 — RF range factors (8 missions, seeds 1–8)
 
 **Protocol.** Each run is a complete delivery mission (3 pads, wedge formation,
 distributed auctions) in the 30×30 m arena, with a fixed **280 s wall window**

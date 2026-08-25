@@ -80,9 +80,20 @@ The whole thing is falsifiable by construction: every experiment is a
 paired A/B — same random seeds, fixed wedge vs. informative formation —
 measuring localization error, map coverage, and *mission completion time*
 (the cost side of the trade). The pipeline already killed one bad
-configuration honestly (an early noise setting showed zero RF benefit,
-and the numbers said so). The A/B campaign for the formation planner is
-running as I write this.
+configuration honestly (an early noise setting showed zero RF benefit, and
+the numbers said so).
+
+**And the first A/B verdict is in, honestly reported:** at the first
+operating point the formation planner harvests measurably more RF
+information (median 44% error correction vs 36% for the fixed wedge,
+positive in 8/8 paired missions) — but the extra maneuvering integrates
+enough additional odometry noise to consume the gain, and costs
+mission-window completions. Net fused error: 0.66 vs 0.69 m. The
+information is real; the price is currently too high. Tracing the
+mission-vs-sensing Pareto front is the next experiment, one command per
+point.
 
 **Output goal:** arXiv preprint (cs.RO) + the open-source testbed. Total
 budget so far: $0.
+
+**Code:** https://github.com/MazharZiadeh/meshbots

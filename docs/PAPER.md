@@ -79,7 +79,15 @@ opportunistic per-packet RSSI from mission traffic as (ii) both a
 localization factor and a mapping modality, (iii) fully decentralized, with
 (iv) formation geometry actively perturbed to maximize link information
 under mission constraints. Contribution (iv) — *formation as aperture* —
-is the core novelty; (i)–(iii) constitute the system it needs.
+is the core novelty; (i)–(iii) constitute the system it needs and are
+individually adjacent to existing work (opportunistic WiFi-RSSI
+localization and RF shadow mapping have both been explored separately) —
+we claim the combination and the planner, not the ingredients. A second
+named contribution emerged from the experiments themselves: **(v) an
+empirical characterization of how active information-gain planning
+amplifies estimator inconsistency** (§4.1) — to our knowledge the first
+report of this interaction at the system level in a multi-robot ISAC
+setting.
 
 ## 3. System
 
@@ -124,8 +132,20 @@ currently-unknown merged-map cells the segment crosses (whether the packet
 arrives clean or attenuated, the ray is informative about those cells).
 loc_gain is exactly the predicted scalar-EKF variance reduction summed over
 links; direction diversity is rewarded intrinsically — two orthogonal links
-shrink both eigen-axes of P, two parallel links do not. The chosen
-perturbation is
+shrink both eigen-axes of P, two parallel links do not.
+
+*A structural tension worth naming:* under log-distance inversion σ_d grows
+linearly with d, so distant links are nearly information-free for ranging —
+loc_gain therefore systematically prefers short, crossing links. map_gain
+prefers the opposite: long rays swept through unknown space. The two
+objectives pull the same slot perturbation toward different length scales,
+and (α, β) is not a mere unit conversion but an arbiter between two sensing
+regimes. This is why a single robot cannot serve both well simultaneously —
+and hints that heterogeneous roles (one follower ranging short, one
+sweeping long) may emerge from a joint formulation; we leave that to future
+work.
+
+The chosen perturbation is
 
     δ* = argmax_δ  α·loc_gain + β·map_gain − λ‖δ‖
     s.t. ‖δ‖ ≤ ρ,  PDR(q, leader) ≥ p_min,  q not on a known obstacle,
@@ -153,7 +173,9 @@ the robot is physically on the pad regardless of what its estimate
 believes — communication-as-sensing closing the loop the estimator opened.
 The general lesson: **an active planner that maximizes information gain
 amplifies any inconsistency in the estimator it feeds**; consistency
-safeguards are not optional once sensing becomes deliberate.
+safeguards are not optional once sensing becomes deliberate. The principled
+treatment of the underlying fusion problem is covariance intersection
+[Julier & Uhlmann 1997]; our inflation + floor is its cheap surrogate.
 
 ## 5. Evaluation
 
