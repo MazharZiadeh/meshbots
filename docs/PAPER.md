@@ -135,6 +135,26 @@ mission-vs-sensing Pareto trade. Everything the planner consumes arrives
 over the mesh or from local topics; the code is identical on every robot
 and the fixed wedge (δ ≡ 0) is the ablation baseline.
 
+### 4.1 A cautionary interaction: information maximization vs. filter consistency
+
+Our first informative-formation campaign failed in a way worth reporting.
+The planner did its job — it increased the number of accepted range
+factors — but our fusion treats peer factors as independent when peer
+estimates are in fact correlated with our own (they were partly built from
+our broadcasts). More factors therefore collapsed the covariance *faster
+than the error actually shrank*: the filter became overconfident, a ~0.7 m
+bias locked in beyond the reach of anchor corrections, and the
+mission-layer symptom was a delivery-docking livelock (the auction winner
+could never satisfy an estimate-based docking check). Two fixes, both
+instructive: (i) inflate peer-factor noise and floor the covariance — a
+cheap stand-in for covariance intersection; (ii) let the delivery pad's own
+chirp double as a *docking sensor*: RSSI above a contact threshold means
+the robot is physically on the pad regardless of what its estimate
+believes — communication-as-sensing closing the loop the estimator opened.
+The general lesson: **an active planner that maximizes information gain
+amplifies any inconsistency in the estimator it feeds**; consistency
+safeguards are not optional once sensing becomes deliberate.
+
 ## 5. Evaluation
 
 Paired Monte Carlo protocol: N seeded missions per arm, identical seeds
