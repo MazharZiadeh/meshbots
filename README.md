@@ -1,197 +1,213 @@
-# meshbots — Decentralized Mesh Multi-Robot Delivery
+# meshbots — the mesh is also a sensor
 
-**Communication-as-sensing for a decentralized multi-robot team: mesh-relayed
-comms, collaborative mapping, cooperative localization from link RSSI, and
-formation control — with no central coordinator.**
+**Opportunistic communication-as-sensing for an infrastructure-free robot
+team.** Three simulated rovers run a delivery mission with no central
+coordinator, routing their own ad-hoc mesh. Every packet they relay arrives
+with a measured signal strength — and this project turns that free
+by-product into localization, mapping, and **online calibration of the
+robots' own wheel odometry**.
 
-Three rovers deliver payloads across an arena while:
+ROS 2 Jazzy · Gazebo Harmonic · Python. MIT. Built in the open, budget $0.
 
-- **meshing** — every rover is a network node. Packets flood hop-by-hop
-  (TTL + duplicate suppression, MANET-style); two rovers out of radio range
-  talk *through* the third. No base station, no central antenna.
-- **mapping** — each rover raytraces its lidar into a local occupancy grid
-  and shares only *changed cells* ("map patches") **exclusively over the
-  mesh**. Every rover merges peer patches into its own fused world map.
-  Partition the mesh and the maps visibly stop converging.
-- **localizing cooperatively** — odometry is deliberately noisy; each rover
-  corrects its estimate with **RSSI-derived range factors** from the very
-  packets the mesh is already exchanging (ISAC: the link is also a sensor),
-  plus chirps from cheap transmit-only RF tags on the delivery pads.
-- **moving like a squadron** — heartbeat-based leader election (kill the
-  leader; the next rover takes over and resumes the mission), wedge
-  formation where followers steer to slots computed from the leader's
-  *mesh-beaconed* pose estimate — localization independent, yet dependent.
-- **allocating tasks by market** — at each pad, every rover broadcasts a bid
-  (distance + load-balancing penalty); everyone computes the same argmin
-  locally, so the team agrees on the deliverer without a master.
-- **RF-shadow mapping** — when a link measures more loss than free space
-  predicts, *something is standing between the robots*. Those excess-loss
-  rays accumulate into "suspected obstacle" evidence — the mesh maps what
-  lidar hasn't seen yet.
+<p align="center">
+  <img src="docs/bias_calibration.png" width="100%" alt="Wheel-scale bias estimated from packet RSSI converges to the true injected bias within ~50 s; position error of the self-calibrating fusion vs position-only fusion">
+</p>
 
-Stack: **ROS 2 Jazzy · Gazebo Harmonic (gz-sim 8) · Python / rclpy**.
-Everything per-robot is identical code under its own namespace; the only
+## Results (Campaign 3, 8 seeded missions, all 3/3 deliveries)
+
+Four localization tracks run **simultaneously in every mission on identical
+noisy odometry and identical packets**, so every run is its own paired
+ablation:
+
+| track | estimator | uses the mesh? | team ATE |
+|---|---|---|---|
+| A | pure dead reckoning | no | 1.99 ± 0.29 m |
+| B | compass-aided dead reckoning | no — *the baseline* | 0.97 ± 0.12 m |
+| C | B + RSSI range factors (peers + pad tags) | **yes** | 0.57 ± 0.12 m |
+| **D** | C + wheel-scale bias as an EKF state | **yes** | **0.46 ± 0.12 m** |
+
+| paired per seed | ATE reduction | better in |
+|---|---|---|
+| C vs B — range factors from mission traffic | 41% ± 13% | 8/8 |
+| D vs C — the bias state alone | 20% ± 8% | 8/8 |
+| D vs B — the whole communication-as-sensing layer | 52% ± 15% | 8/8 |
+
+**Self-calibration:** each rover carries a hidden 4–9% velocity-scale bias
+(random sign). After one mission the estimate is within **1.1% ± 0.5%** of
+the truth (24 robot-runs) — observed purely through the RSSI of packets
+the team was exchanging anyway. Map coverage: 95% merged vs 87% own lidar;
+≈8,400 packets relayed hop-by-hop per mission.
+
+**Formation as aperture (Campaign 2):** letting followers perturb their
+formation slots to make their links informative harvested *more* RF
+information (median paired correction 44% vs 36%) but the extra
+manoeuvring cost as much odometry drift as it bought, and cost mission
+time. Reported as a negative result with its mechanism (§4.1 of the paper):
+information-gain planning amplifies estimator inconsistency.
+
+Full tables, per-seed numbers and caveats: [`docs/RESULTS.md`](docs/RESULTS.md).
+Raw logs of every run: [`results/`](results/). Paper draft:
+[`docs/PAPER.md`](docs/PAPER.md). One-page idea: [`docs/IDEA.md`](docs/IDEA.md).
+Literature and honest novelty statement: [`docs/RELATED.md`](docs/RELATED.md).
+
+> **Caveat that matters:** the headline point uses an idealized channel
+> (log-distance path loss, 2 dB i.i.d. shadowing). Real indoor WiFi shows
+> 3–6 dB plus multipath and per-device offsets. A channel-harshness sweep
+> (2/4/6/8 dB, correlated fading, unknown offsets) is Campaign 4 and will
+> be reported here whether or not the gains survive.
+
+## What the system does
+
+- **Mesh** — every rover is a network node. Packets flood hop-by-hop (TTL +
+  duplicate suppression, MANET-style); two rovers out of radio range talk
+  *through* the third. No base station.
+- **Cooperative localization from traffic** — odometry is deliberately
+  degraded (bias + noise, seeded per robot). Each rover corrects itself with
+  range factors inverted from the RSSI of the *direct* packets it hears —
+  from teammates (whose broadcast poses carry covariance) and from cheap
+  transmit-only RF tags on the delivery pads. Links whose ray crosses a
+  known obstacle are gated out: lidar informing RF.
+- **The mesh calibrates the wheels** — the wheel-odometry scale bias is an
+  EKF state; the range factors observe it through the motion model.
+- **Collaborative mapping** — each rover shares only changed cells ("map
+  patches") **exclusively over the mesh**; peers merge them. Partition the
+  mesh and the maps visibly stop converging.
+- **RF-shadow mapping** — a link that loses more signal than free space
+  predicts means *something stands between the robots*; the excess votes
+  obstruction along the ray into cells no lidar has seen: RF informing the
+  map.
+- **Squadron behaviour** — heartbeat leader election with failover, wedge
+  formation from the leader's *mesh-beaconed* estimate, sealed-bid delivery
+  auctions with load balancing, a mission FSM replicated on every robot.
+- **Formation-as-aperture planner** (optional arm) — followers score
+  perturbations of their slot by predicted link information (range-factor
+  variance reduction + unknown map cells the link would sweep) minus
+  deviation and motion cost, under a leader-link PDR floor.
+
+Everything per-robot is identical code under its own namespace. The only
 global process is the RF propagation simulator, which models physics
-(path loss, penetration attenuation, packet loss), never coordination.
-
----
-
-## Project layout
-
-Structured after the [Husarion ROS 2 tutorial](https://husarion.com/tutorials/ros2-tutorials/10-exploration/)
-conventions: one package, small composable launch files, every tunable in
-`config/*.yaml`, nothing hardcoded.
-
-```
-ros2_ws/src/meshbots/
-├── meshbots/            # the nodes (identical code on every rover)
-│   ├── mesh_radio.py    #   MANET flooding relay
-│   ├── localizer.py     #   cooperative localization (RSSI range factors)
-│   ├── mapper.py        #   collaborative grid + RF-shadow layer
-│   ├── swarm.py         #   election · formation · auctions · mission FSM
-│   ├── navigator.py     #   potential-field local planner
-│   ├── radio_channel.py #   the ONLY global node: RF physics ("the air")
-│   ├── rf_model.py      #   shared path-loss model (mirrors arena.sdf)
-│   └── eval_metrics.py  #   post-mission ATE evaluation
-├── launch/
-│   ├── sim.launch.py    # top-level bring-up (composes the two below)
-│   ├── gazebo.launch.py # world + clock bridge
-│   └── rviz.launch.py
-├── config/
-│   ├── team.yaml        # who exists and where they start
-│   ├── swarm.yaml       # formation slots, auction, timing
-│   ├── localization.yaml# odometry degradation + EKF tuning + rf ablation
-│   ├── mapping.yaml     # grid geometry, patch caps, RF-shadow thresholds
-│   ├── navigation.yaml  # planner gains
-│   └── mesh.yaml        # radio TTL
-├── rviz/meshbots.rviz
-├── worlds/arena.sdf
-├── models/rover.sdf.template
-└── missions/delivery.yaml   # the op order: targets + base
-```
-
-Each rover's stack runs under its own namespace (`/rover_1/swarm`,
-`/rover_1/mesh_radio`, …) with relative topics, so adding a fourth rover is
-one line in `config/team.yaml` plus a formation slot in `config/swarm.yaml`.
+(path loss, penetration, fading, packet loss, per-packet RSSI stamping) —
+never coordination. Robots never see ground truth.
 
 ## Quick start
 
 ```bash
-cd ros2_ws
-colcon build --symlink-install
-source install/setup.bash
-ros2 launch meshbots sim.launch.py                 # Gazebo GUI + RViz
-ros2 launch meshbots sim.launch.py gui:=false      # headless sim + RViz
+sudo apt install ros-jazzy-desktop ros-jazzy-ros-gz        # Jazzy + Gazebo Harmonic
+cd ros2_ws && colcon build --symlink-install && source install/setup.bash
+ros2 launch meshbots sim.launch.py                          # Gazebo GUI + RViz
+ros2 launch meshbots sim.launch.py gui:=false rviz:=false   # headless
 ```
 
-The mission runs itself: the squadron forms up, sweeps to each red pad,
-auctions the delivery, the winner docks and delivers (pad marker turns
-green), and the team returns to base. A full mission takes ~4 minutes.
+The mission runs itself: form up, sweep to each red pad, auction the
+delivery, the winner docks (the pad's own RF chirp is the docking sensor),
+the pad turns green, return to base. ~2 minutes to complete; runs are
+evaluated over a 280 s window.
 
-**After (or during) a run — the numbers:**
+Launch arguments:
 
-```bash
-ros2 run meshbots eval_metrics --plot /tmp/ate.png
-```
-
-prints absolute trajectory error for the three estimators that ran
-simultaneously (the ablation is built into every mission):
-
-| track | estimator | uses the mesh? |
+| arg | values | meaning |
 |---|---|---|
-| A | pure dead reckoning | no |
-| B | compass-aided dead reckoning | no — the baseline |
-| C | B + RSSI range factors (peers + pad tags) | **yes** |
+| `seed` | int | reproducible odometry-degradation and channel draws |
+| `formation` | `fixed` · `informative` · `aware` | wedge only · aperture planner · cost-aware aperture planner |
+| `rf_sigma_db` / `rf_fading_db` / `rf_fading_tau` / `rf_offset_db` | floats | channel harshness (defaults = idealized channel) |
+| `chassis` | `builtin` · `rosbot` | simple diff-drive rover · Husarion ROSbot stack (scaffolded, untested) |
+| `eval_dir` | path | where per-run CSV logs go |
 
-If C doesn't beat B, communication-as-sensing did nothing — the claim is
-falsifiable by construction.
-
-## What to watch in RViz
-
-- **Green↔red lines** between rovers: live mesh links, colored by predicted
-  packet-delivery ratio from the path-loss model. Watch a link redden as a
-  silo slides between two rovers.
-- **The merged map** (`/rover_1/merged_map`): grows from three lidars at
-  once — enable rover_2/rover_3's maps to compare each robot's world view.
-  Mid-gray cells (value 60) are **RF-suspected obstacles** no lidar has
-  confirmed. Raw RF evidence: `/rover_N/rf_map`.
-- **Labels** over each rover: role (LEADER/follower) and mission phase.
-- Red pads = pending deliveries; green = delivered.
-
-## Things worth trying
+## Reproduce the numbers
 
 ```bash
-# Kill the leader mid-mission — watch failover (rover_2 takes command):
-ros2 topic pub -r 10 /rover_1/cmd_vel geometry_msgs/msg/Twist "{}" &   # or:
-ros2 lifecycle set ...   # simplest: kill rover_1's swarm node process
-
-# Watch multi-hop relaying (the "path" field shows actual routes):
-ros2 topic echo /rover_1/mesh/rx | grep -m5 path
-
-# Mesh traffic stats (tx/rx/relayed/dups):
-ros2 topic echo /rover_2/mesh/stats
+./scripts/run_batch.sh 8 results/my_fixed 280                          # 8 seeds, ~40 min
+./scripts/run_batch.sh 8 results/my_aware 280 formation:=aware         # a paired arm
+ros2 run meshbots batch_metrics --dir results/my_fixed --markdown --plot out.png
+ros2 run meshbots batch_metrics --compare results/my_fixed results/my_aware
+python3 scripts/plot_bias.py results/my_fixed bias.png
 ```
+
+Every campaign in `docs/RESULTS.md` was produced exactly this way
+(`scripts/run_campaign3.sh`, `scripts/run_sensitivity.sh`), and the raw
+per-run CSVs are committed under `results/`. If track D doesn't beat C, or
+C doesn't beat B, the claim is falsified — that is the point of the
+protocol.
+
+## Project layout
+
+```
+ros2_ws/src/meshbots/
+├── meshbots/
+│   ├── mesh_radio.py         # MANET flooding relay (per robot)
+│   ├── radio_channel.py      # the ONLY global node: RF physics, "the air"
+│   ├── rf_model.py           # shared path-loss model (mirrors arena.sdf)
+│   ├── localizer.py          # 4-track localizer: DR / compass DR / RF EKF / + bias state
+│   ├── mapper.py             # collaborative grid + RF-shadow layer
+│   ├── swarm.py              # election · formation · auctions · mission FSM
+│   ├── formation_planner.py  # formation-as-aperture slot perturbation
+│   ├── navigator.py          # potential-field local planner
+│   ├── eval_metrics.py       # single-run ATE
+│   └── batch_metrics.py      # campaign statistics, paired comparisons, plots
+├── launch/  sim.launch.py · gazebo.launch.py · rviz.launch.py
+├── config/  team · swarm · localization · mapping · navigation · mesh · formation(_aware)
+├── worlds/arena.sdf · models/rover.sdf.template · missions/delivery.yaml
+scripts/     run_batch.sh · run_campaign3.sh · run_sensitivity.sh · plot_bias.py
+docs/        RESULTS.md · PAPER.md · IDEA.md · RELATED.md · figures
+results/     raw per-run logs of every reported campaign
+```
+
+Structured after the Husarion ROS 2 tutorial conventions: one package,
+small composable launch files, every tunable in `config/*.yaml`. Adding a
+fourth rover is one line in `team.yaml` plus a slot in `swarm.yaml`.
 
 ## Architecture
 
 ```
                  ┌────────────────────────── per rover ×3 ──────────────────────────┐
                  │                                                                  │
-  Gazebo         │  scan ──► mapper ◄── /pose ── localizer ◄── odom (noisy DR)      │
+  Gazebo         │  scan ──► mapper ◄── /pose ── localizer ◄── odom (degraded DR)   │
   (arena,        │            │  ▲ map patches      ▲  RSSI range factors           │
-  diff-drive,    │            │  └──────┐           │  + RF-shadow rays             │
+  diff-drive,    │            │  └──────┐           │  + bias state, RF-shadow rays │
   gpu lidar)     │            ▼         │           │                               │
                  │       merged_map   mesh/rx ◄── mesh_radio ◄─┐ (flood relay,      │
-                 │                      ▲            ▲         │  TTL, dedup)       │
-                 │  swarm ──────────────┴─ beacons ──┘         │                    │
-                 │   │ leader election · formation · auction   │                    │
-                 │   ▼                                         │                    │
-                 │  goal ──► navigator ──► cmd_vel             │                    │
-                 └─────────────────────────────────────────────┼────────────────────┘
-                                                               │ air_tx / air_rx
-                                              radio_channel  ◄─┘
-                              (RF physics only: log-distance path loss,
-                               obstacle penetration, PDR, RSSI stamping,
-                               delivery-pad RF tag chirps)
+                 │            ▲          ▲            ▲        │  TTL, dedup)       │
+                 │  formation_planner ─► swarm ── beacons ─────┘                    │
+                 │   (slot_offset)        │ election · formation · auction          │
+                 │                        ▼                                         │
+                 │  goal ──► navigator ──► cmd_vel                                  │
+                 └──────────────────────────────────────────────┼───────────────────┘
+                                                                │ air_tx / air_rx
+                                               radio_channel  ◄─┘
+                              (RF physics only: log-distance path loss, obstacle
+                               penetration, shadowing/fading/offsets, PDR,
+                               per-packet RSSI stamping, delivery-pad tag chirps)
 ```
 
-- `mesh_radio.py` — per-robot MANET radio: wraps app payloads into packets,
-  floods, relays with TTL, suppresses duplicates, records hop paths.
-- `radio_channel.py` — "the air": for each (tx, potential rx) pair, samples
-  RSSI = P_tx − PL(d) − Σ(wall attenuation) + N(0,σ) against the arena
-  geometry and delivers with probability PDR(RSSI). Robots only ever see
-  what their radio heard — never ground truth.
-- `localizer.py` — noisy dead reckoning + scalar-EKF range updates from the
-  RSSI of *direct* (single-hop) packets; links whose ray crosses a
-  known-occupied map cell are gated out (lidar informing RF). Emits
-  excess-loss rays for RF-shadow mapping (RF informing the map).
-- `mapper.py` — log-odds occupancy grid, mesh patch exchange, peer merge
-  (direct observation beats hearsay), RF-shadow evidence layer.
-- `swarm.py` — beacons, leader election, wedge formation, sealed-bid
-  delivery auction with load balancing, mission FSM (replicated on every
-  robot — any survivor can finish the mission).
-- `navigator.py` — potential-field go-to-goal with lidar repulsion and a
-  stuck-escape wiggle. Teammates are avoided for free (they're on lidar).
+## What to watch in RViz
 
-## Honest limitations (a.k.a. the roadmap)
+- **Green↔red lines** between rovers: live mesh links coloured by predicted
+  packet-delivery ratio. Watch one redden as a silo slides between rovers.
+- **Merged map** (`/rover_1/merged_map`): mid-gray cells (value 60) are
+  RF-suspected obstacles no lidar has confirmed; raw evidence in `rf_map`.
+- **Labels** over each rover: role and mission phase. Red pads pending,
+  green delivered.
 
-- **Shared map origin**: rovers deploy from a surveyed base, so maps merge
-  by index. Real C-SLAM earns the transform via feature matching / inter-robot
-  loop closures (see Swarm-SLAM, DOOR-SLAM, Kimera-Multi).
-- **Idealized RF**: log-distance + penetration loss, i.i.d. shadowing. No
-  multipath fading, no antenna patterns. The RSSI→range inversion is
-  optimistic; obstructed links are gated rather than corrected.
-- **Correlated estimates**: peer-to-peer range updates treat the peer's
-  broadcast covariance as independent, which double-counts information
-  (the classic cooperative-localization consistency problem). Pad anchors
-  keep it bounded; a covariance-intersection update is the proper fix.
-- **Yaw from a compass**: heading is magnetometer-style (absolute + noise),
-  keeping yaw drift out of the mapping problem so position estimation stays
-  the focus.
-- **Reactive navigation**: potential fields can trap in deep concave
-  obstacles; the arena is convex-ish by design. Swap in Nav2 per rover if
-  you need real planning.
-- **Next research step**: *active* link-informative motion — perturb
-  formation slots to trade exploration coverage against expected RF
-  information gain (make the squadron fly through shadows on purpose).
+## Honest limitations
+
+- **Sim-only, idealized RF** at the headline point (see caveat above).
+  Hardware validation (ESP32 RSSI is near-free) is the necessary next step.
+- **Channel parameters assumed known** (P_tx, PL_0, n); field deployment
+  needs online range-model calibration.
+- **Correlated estimates**: peer range updates ignore cross-correlation
+  (classic cooperative-localization consistency issue); we use inflation +
+  a covariance floor, which also pins the covariance and starved the
+  formation planner of a geometry signal. Covariance intersection is the
+  proper fix and is queued.
+- **Shared map origin** (surveyed base); real C-SLAM earns the transform
+  via inter-robot loop closures.
+- **Greedy per-robot planning**, one-step lookahead; **n = 8 per arm**;
+  one arena, three robots. Statistics are indicative.
+
+## Cite
+
+```
+Ziadeh, M. (2026). The Mesh Calibrates the Wheels: Opportunistic
+Communication-as-Sensing for Infrastructure-Free Robot Teams.
+Working draft, https://github.com/MazharZiadeh/meshbots
 ```
