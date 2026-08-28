@@ -1,30 +1,38 @@
-# Formation as Aperture: Opportunistic Communication-as-Sensing in Mission-Driven Multi-Robot Mesh Teams
+# The Mesh Calibrates the Wheels: Opportunistic Communication-as-Sensing for Infrastructure-Free Robot Teams
 
-*Working draft — target: arXiv cs.RO preprint, then a multi-robot / ISAC
-workshop. Results marked [TBD] are filled from the paired A/B campaign
-(`ros2 run meshbots batch_metrics --compare /tmp/mb_fixed /tmp/mb_informative --markdown`).*
+*Working draft — target: arXiv cs.RO preprint, then a multi-robot
+workshop. Results marked [TBD] are filled from `results/` via
+`ros2 run meshbots batch_metrics`. Terminology note: we say
+"communication-as-sensing / opportunistic RF sensing", not ISAC — the
+wireless community reserves ISAC for waveform-level joint design
+(see docs/RELATED.md).*
 
 ## Abstract (draft)
 
 Small multi-robot teams that operate without infrastructure route their own
-communications over an ad-hoc mesh. We observe that this mesh is not only a
-data channel but a sensor the team already carries: the received signal
-strength of every delivered packet constrains the geometry between
-transmitter and receiver, and its *excess* attenuation constrains what
-stands between them. We present a fully decentralized system in which a
-three-rover delivery team (a) harvests per-packet RSSI from ordinary
-mission traffic — map patches, state beacons, task-auction bids — as range
-factors for cooperative localization and as tomographic evidence painted
-into a shared occupancy map, with no dedicated ranging hardware or channel
-sounding; and (b) treats its *formation geometry as a steerable sensing
-aperture*: each follower continuously perturbs its formation slot, within
-mission constraints, to maximize the expected information its links will
-yield. In an 8-seed Monte Carlo campaign, opportunistic RSSI factors reduce
-team absolute trajectory error by 34% ± 19% against a no-RF baseline
-(better in 8/8 paired runs); informative formation perturbation further
-changes fused ATE by [TBD] and map coverage by [TBD] at a mission-time cost
-of [TBD]. All claims are reproducible from a single script in an
-open-source ROS 2 / Gazebo testbed.
+communications over an ad-hoc mesh. Every delivered packet arrives with a
+received signal strength that constrains the geometry between transmitter
+and receiver, and whose *excess* attenuation constrains what stands between
+them. We present a fully decentralized ROS 2 system in which a three-rover
+delivery team harvests the per-packet RSSI of its ordinary mission traffic
+— map patches, state beacons, task-auction bids — for three purposes at
+once, with no dedicated ranging hardware or channel sounding: (a) range
+factors for cooperative localization; (b) attenuation evidence painted
+into a shared occupancy map, of space no lidar has seen; and (c)
+**online calibration of each robot's wheel-odometry scale bias**, which the
+range factors observe through the motion model. In a seeded Monte Carlo
+campaign with paired ablations, position-only RSSI fusion reduces team
+absolute trajectory error by [TBD]% against a no-RF baseline, and adding
+the bias state reduces it by a further [TBD]% (better in [TBD] paired
+runs), recovering a 4–9% injected scale bias to within [TBD] pp within one
+mission. We further ask whether the team's *formation geometry* can be
+treated as a steerable sensing aperture — each follower perturbing its
+slot, within mission constraints, to make its links informative — and
+report an honest negative result at the first operating point together
+with its mechanism: information-gain planning amplifies estimator
+inconsistency. A channel-harshness sweep (shadowing 2–8 dB, correlated
+fading, unknown per-device offsets) bounds where the gains survive. All
+claims are reproducible from a single script in an open-source testbed.
 
 ## 1. Problem
 
@@ -34,15 +42,19 @@ staying connected (they are each other's network), knowing where they are
 (GNSS-denied, drift-prone odometry), and knowing what surrounds them
 (mapping). The literature treats these as separate subsystems glued
 together: C-SLAM assumes communication as free plumbing; cooperative
-localization assumes dedicated ranging hardware (UWB); communication-aware
-planning treats the radio link as a *constraint to protect*, never a
-*sensor to read*. The result is that a resource every mesh team already
-carries — the measured physical layer of its own traffic — is thrown away.
+localization usually assumes dedicated ranging hardware (UWB); most
+communication-aware planning treats the radio link as a *constraint to
+protect*. Reading the physical layer of inter-robot packets as a sensor is
+not new (Oliveira et al. 2014; Rubenstein et al. 2014; Fink & Kumar;
+the Gil group's CSI work) — but it is almost always studied in isolation,
+as a localization or a mapping problem, rather than as an integrated
+by-product of a live mission's traffic in a system that also has to
+navigate, allocate tasks and hold formation.
 
-**Question:** how much of the ranging-hardware and mapping value can a team
-recover *for free* from the packets it was going to send anyway — and how
-much more if it moves, within its mission's tolerance, to make those
-packets informative?
+**Question:** how much localization, mapping *and calibration* value can a
+team recover *for free* from the packets it was going to send anyway — and
+does it pay to move, within the mission's tolerance, to make those packets
+more informative?
 
 ## 2. Related work and the gap
 
@@ -56,38 +68,44 @@ packets informative?
   generated by an unrelated task, harvested decentralized, in real time.
 - **Cooperative localization with ranging.** Range-only CL is mature, from
   UWB mesh protocols to NASA's CADRE lunar team [InterRanging24;
-  DCLSparse24]. All of it assumes dedicated ranging radios. Our range
-  factors cost zero additional hardware and inherit the comms traffic's
-  schedule — measurements arrive when packets do.
-- **Communication-aware planning.** Trajectory planners maintain
-  connectivity (e.g., Fiedler-value constraints [FiedlerPlanning24]) or
-  optimize throughput/energy [CommAwareTraj20]. The link is always on the
-  constraint side of the problem. In our formulation link geometry appears
-  in the *objective*: a follower may deliberately let a link graze an
-  unmapped region — or an obstruction — because the resulting attenuation
-  is data.
-- **ISAC.** 6G integrated sensing and communication is a major research
-  wave; recent work optimizes UAV-swarm geometry for joint
-  sensing-communication via consensus ADMM [UAVSwarmISAC25], confirming
-  that geometry–sensing coupling in swarms is considered open. That line
-  is PHY-level (beamforming at external targets); robotics-grade occupancy
-  mapping and team localization from mesh RSSI, under mission constraints,
-  is unaddressed.
+  DCLSparse24]; RSSI of exchanged messages has been used as a range for
+  team localization (Oliveira et al. 2014; Kilobot, Rubenstein et al.
+  2014; Latif & Parasuraman 2022). Our range factors add nothing to that
+  physics; they inherit the comms traffic's schedule — measurements arrive
+  when packets do — and feed a state that those works do not estimate.
+- **Range-aided odometry calibration.** Ranges have been used to observe
+  visual-odometry scale (Nguyen et al. 2020, UWB) and wheel-odometer scale
+  in UWB+IMU+odometer fusion (2024–25); systematic wheel calibration goes
+  back to Borenstein & Feng (1996). We apply the same structure with a far
+  noisier and free sensor — packet RSSI — and show it still converges
+  within a mission.
+- **Communication-aware planning and formation for localizability.**
+  Trajectory planners maintain connectivity (e.g., Fiedler-value
+  constraints [FiedlerPlanning24]) or optimize throughput/energy
+  [CommAwareTraj20]. Separately, formation geometry has been optimized
+  offline for range-only estimation, including mission-vs-observability
+  trade-offs (Zhou & Roumeliotis 2011; Le Ny & Chauvière 2018; Cossette
+  et al. 2022; Ahmed et al. 2024). What we add is narrower: an *online,
+  per-cycle* slot perturbation inside a live mission whose objective also
+  contains an occupancy-coverage term on the link rays, and a paired
+  accounting of what the maneuvering costs the mission.
+- **ISAC.** 6G integrated sensing and communication optimizes waveforms
+  and swarm geometry for joint sensing-communication [UAVSwarmISAC25];
+  that line is PHY-level. We use the term only as context.
 
-**Gap.** No prior system (to our knowledge; see §7) combines: (i)
-opportunistic per-packet RSSI from mission traffic as (ii) both a
-localization factor and a mapping modality, (iii) fully decentralized, with
-(iv) formation geometry actively perturbed to maximize link information
-under mission constraints. Contribution (iv) — *formation as aperture* —
-is the core novelty; (i)–(iii) constitute the system it needs and are
-individually adjacent to existing work (opportunistic WiFi-RSSI
-localization and RF shadow mapping have both been explored separately) —
-we claim the combination and the planner, not the ingredients. A second
-named contribution emerged from the experiments themselves: **(v) an
-empirical characterization of how active information-gain planning
-amplifies estimator inconsistency** (§4.1) — to our knowledge the first
-report of this interaction at the system level in a multi-robot ISAC
-setting.
+**Contributions.** (i) A fully decentralized system in which opportunistic
+per-packet RSSI from mission traffic serves simultaneously as a
+localization factor, a mapping modality, and an **odometry-calibration
+signal** — the last, to our knowledge, not previously shown with RSSI —
+with lidar↔RF gating in both directions. (ii) A paired Monte Carlo
+protocol in which every mission is its own ablation (four estimator tracks
+on identical measurements) and every formation arm is seed-paired, plus a
+channel-harshness sweep. (iii) *Formation as aperture*: an online slot
+perturbation planner with a link-ray coverage term, its first paired A/B
+result (negative at the first operating point), and (iv) an empirical
+system-level account of how active information-gain planning amplifies a
+known estimator inconsistency (§4.1). We claim the combination, the
+calibration result and the findings — not the ingredients.
 
 ## 3. System
 
@@ -112,6 +130,24 @@ Key estimation elements:
 - **Anchors.** Transmit-only RF tags on delivery pads (mission
   infrastructure, not a coordinator) chirp surveyed positions, bounding
   the team's common-mode drift.
+
+### 3.1 The mesh calibrates the wheels
+
+A persistent velocity-scale bias b (measured v_m = v(1 + b); we inject
+|b| ∈ [4, 9]%, sign random, per robot) is the dominant error source in our
+missions: position-only range corrections fight the resulting drift on
+every leg without ever removing it. We therefore augment the per-robot
+state to [x, y, b] and predict with v_m/(1 + b). The range measurement
+h = ‖x − p‖ has no direct dependence on b, but the prediction Jacobian
+∂x/∂b = −v_m Δt (cos ψ, sin ψ)/(1 + b)² builds position–bias correlation
+along the direction of travel, so every accepted range factor also
+corrects b. Observability therefore requires motion, and is strongest for
+links aligned with the heading — a geometric fact the formation planner
+could exploit (future work). The bias state has prior σ_b = 0.06 and a
+small random walk (0.002 s⁻¹) so it can track slow changes (tyre wear,
+load). The two fused tracks — C: [x, y], D: [x, y, b] — are updated from
+*identical* measurements in every run, so their comparison is paired
+measurement by measurement (§5). Track D drives the robot.
 
 ## 4. Formation as aperture
 
@@ -173,9 +209,18 @@ the robot is physically on the pad regardless of what its estimate
 believes — communication-as-sensing closing the loop the estimator opened.
 The general lesson: **an active planner that maximizes information gain
 amplifies any inconsistency in the estimator it feeds**; consistency
-safeguards are not optional once sensing becomes deliberate. The principled
-treatment of the underlying fusion problem is covariance intersection
-[Julier & Uhlmann 1997]; our inflation + floor is its cheap surrogate.
+safeguards are not optional once sensing becomes deliberate. This is a
+known consequence of ignoring cross-correlation in cooperative
+localization (Roumeliotis & Bekey 2002; Bahr et al. 2009; Carrillo-Arce et
+al. 2013) — we do not claim the mechanism, only its system-level
+interaction with an active planner. The principled treatment is
+covariance intersection [Julier & Uhlmann 1997; Carrillo-Arce et al.
+2013]; our inflation + floor is its cheap surrogate, with a second cost we
+only discovered later: the floor pins the covariance (tr P ≈ 0.04 m²
+throughout a mission), which starves the planner's information model of
+any geometric signal — the planner in Campaign 2 was effectively chasing
+map cells only. The bias-augmented filter of §3.1 restores a meaningful
+covariance; a CI-based arm is queued.
 
 ## 5. Evaluation
 
@@ -191,8 +236,22 @@ paired improvement 34% ± 19%, better in 8/8 runs; merged-map coverage 94%
 vs 84% own-lidar; ≈8,400 packets relayed per mission; 7/8 missions
 delivered 3/3 (one time-window truncation).
 
-**Campaign 2 (formation A/B, n=8+8):** [TBD — fused ATE, coverage,
-mission time, deliveries, paired win rates]
+**Campaign 2 (formation A/B, n=8+8, position-only estimator):** fixed
+wedge vs. informative perturbation, same seeds: fused ATE 0.69 vs 0.66 m
+(informative better in 5/8), merged coverage 95.0 vs 94.1%, mission time
+127.5 vs 130.2 s (informative slower in 5/5 completed pairs), 3/3
+deliveries in 7/8 vs 5/8 windows. The informative arm harvested more RF
+information (median paired RF correction 44% vs 36%, positive in 8/8 vs
+7/8) but its extra maneuvering raised pure-DR error from 1.86 to 2.16 m on
+identical seeds — the harvested information paid for the motion and no
+more.
+
+**Campaign 3 (self-calibration, n=8 per arm, seed-paired arms: fixed /
+cost-aware informative / informative):** [TBD — tracks B/C/D ATE, D-vs-C
+paired wins, bias residual, arms compared]
+
+**Campaign 4 (channel harshness, fixed wedge, n=8 per point):** [TBD —
+ATE per track vs σ_dB ∈ {2, 4, 6, 8} and the realistic composite]
 
 ## 6. Reproducibility
 
@@ -202,11 +261,16 @@ plots). Repository: meshbots (ROS 2 Jazzy, Gazebo Harmonic, Python).
 
 ## 7. Limitations (say them loudly)
 
-- **Idealized RF:** log-distance + material penetration, i.i.d. shadowing;
-  no multipath, fading, or antenna patterns. Results validate the
-  architecture, not a specific radio. Ray-traced channels or hardware
-  (ESP32/WiFi RSSI is budget-zero) are the necessary next step before any
-  strong claim transfers.
+- **Idealized RF at the headline point:** log-distance + material
+  penetration with 2 dB i.i.d. shadowing, where real indoor WiFi shows
+  3–6 dB (5.5 dB fitted multi-room, Bullmann et al. 2020) and outdoor
+  4–12 dB; no multipath or antenna patterns. Absolute ATE numbers do not
+  transfer; only paired deltas are defensible, and §5.3 reports how they
+  shrink with 4/6/8 dB shadowing, correlated fading and unknown per-device
+  offsets. Hardware (ESP32/WiFi RSSI is budget-zero) is the necessary next
+  step before any strong claim transfers.
+- **Channel parameters (P_tx, PL_0, n) are assumed known;** online range
+  model calibration is the field-deployment gap.
 - **Consistency:** peer range updates ignore estimate cross-correlation
   (double-counting); pad anchors bound it; covariance intersection is the
   principled fix.
