@@ -52,7 +52,7 @@ delivery pad's own radio chirp doubles as the docking sensor.
 
 Everything is reproducible from one script — paired seeds, ablations built
 into every run, and a limitations section that says "sim-only, idealized
-RF" out loud. Built in the open, budget: $0.
+RF" out loud. Built in the open.
 
 Repo: https://github.com/MazharZiadeh/meshbots
 Research brief + working paper draft are in /docs.

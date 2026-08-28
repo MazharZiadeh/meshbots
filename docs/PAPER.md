@@ -273,7 +273,7 @@ plots). Repository: meshbots (ROS 2 Jazzy, Gazebo Harmonic, Python).
   4–12 dB; no multipath or antenna patterns. Absolute ATE numbers do not
   transfer; only paired deltas are defensible, and §5.3 reports how they
   shrink with 4/6/8 dB shadowing, correlated fading and unknown per-device
-  offsets. Hardware (ESP32/WiFi RSSI is budget-zero) is the necessary next
+  offsets. Hardware validation (e.g. ESP32/WiFi RSSI) is the necessary next
   step before any strong claim transfers.
 - **Channel parameters (P_tx, PL_0, n) are assumed known;** online range
   model calibration is the field-deployment gap.

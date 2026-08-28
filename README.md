@@ -321,7 +321,7 @@ excess loss above 3σ_dB vote obstruction into the map.
 | — | covariance intersection for peer factors (replace inflation + floor) | queued |
 | — | per-device RSSI offset as a calibrated state | planned |
 | — | n = 16 headline arm; LaTeX preprint (arXiv cs.RO) | planned |
-| — | hardware RSSI characterization (ESP32, near-zero cost) | wanted |
+| — | hardware RSSI characterization (ESP32) | wanted |
 
 ## Limitations
 
@@ -366,5 +366,5 @@ If you use the testbed or the protocol, please cite the repository:
 }
 ```
 
-MIT license. Built in the open with zero budget; issues, questions and
-collaboration are welcome through GitHub issues.
+MIT license. Issues, questions and collaboration are welcome through
+GitHub issues.

@@ -93,7 +93,6 @@ information is real; the price is currently too high. Tracing the
 mission-vs-sensing Pareto front is the next experiment, one command per
 point.
 
-**Output goal:** arXiv preprint (cs.RO) + the open-source testbed. Total
-budget so far: $0.
+**Output goal:** arXiv preprint (cs.RO) + the open-source testbed.
 
 **Code:** https://github.com/MazharZiadeh/meshbots
