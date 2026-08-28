@@ -19,5 +19,9 @@
     # Consistency (correlated-information) safeguards:
     peer_inflation: 2.0      # multiply peer-factor R (double-counting guard)
     p_floor: 0.02            # covariance floor per axis (m^2)
+    # Self-calibration (track D): odometry scale bias as an EKF state.
+    drive_track: D           # C = position-only fusion, D = + bias state
+    bias_sigma0: 0.06        # prior std of the scale bias
+    bias_walk: 0.002         # bias random walk (1/s) — keeps it adaptable
     # RF-shadow evidence:
     excess_db: 6.0           # dB above free-space prediction (3 sigma)

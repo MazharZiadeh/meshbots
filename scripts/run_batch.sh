@@ -2,14 +2,15 @@
 # Monte Carlo evaluation: N full delivery missions with different noise seeds.
 #
 #   ./scripts/run_batch.sh [N_RUNS] [OUT_DIR] [SECONDS_PER_RUN] [EXTRA_ARGS...]
-#   e.g. ./scripts/run_batch.sh 8 /tmp/mb_informative 280 formation:=informative
+#   e.g. ./scripts/run_batch.sh 8 results/informative 280 formation:=informative
 #
 # Each run gets its own seed and log directory. Afterwards:
 #   ros2 run meshbots batch_metrics --dir <OUT_DIR> --plot batch.png
 #   ros2 run meshbots batch_metrics --compare <DIR_A> <DIR_B>
+# Default output lives under the repo's results/ (not /tmp: a reboot wipes it).
 # (no `set -u`: ROS setup.bash trips over unbound variables)
 N=${1:-6}
-BASE=${2:-/tmp/meshbots_batch}
+BASE=${2:-$(cd "$(dirname "$0")/.." && pwd)/results/batch}
 DURATION=${3:-280}
 shift 3 2>/dev/null
 EXTRA="$@"

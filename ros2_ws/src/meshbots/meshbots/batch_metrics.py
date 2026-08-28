@@ -19,7 +19,12 @@ from .eval_metrics import load, ate
 
 TRACKS = [('A pure dead reckoning', 3, 4),
           ('B compass DR (no RF)', 5, 6),
-          ('C + RF range factors', 7, 8)]
+          ('C + RF range factors', 7, 8),
+          ('D + RF + bias state', 10, 11)]
+
+
+def has_track(rows, ix, iy):
+    return rows and len(rows[0]) > max(ix, iy)
 
 
 def read_run(run_dir):
@@ -35,9 +40,16 @@ def read_run(run_dir):
             continue
         rows = load(path)
         for name, ix, iy in TRACKS:
+            if not has_track(rows, ix, iy):
+                continue        # older campaigns have no track D columns
             rmse, _ = ate(rows, ix, iy)
             if not math.isnan(rmse):
                 per_track[name].append(rmse)
+        # Bias self-calibration: final |b_hat - b_true| per robot.
+        if has_track(rows, 12, 13):
+            out.setdefault('bias_err', []).append(
+                abs(rows[-1][12] - rows[-1][13]))
+            out.setdefault('bias_true', []).append(abs(rows[-1][13]))
     out['ate'] = {n: (st.mean(v) if v else float('nan'))
                   for n, v in per_track.items()}
     # Map coverage: final own vs merged known fraction (mean over robots).
@@ -125,7 +137,10 @@ def compare(dir_a, dir_b, md):
         print()
         print(f'| metric | {la} | {lb} | B better |')
         print('|---|---|---|---|')
-    row('fused ATE (m)', lambda r: r['ate'][fused], ' m')
+    row('fused ATE C (m)', lambda r: r['ate'][fused], ' m')
+    if not math.isnan(a_runs[common[0]]['ate'][TRACKS[3][0]]):
+        row('fused ATE D (m)', lambda r: r['ate'][TRACKS[3][0]], ' m')
+    row('pure-DR ATE A (m)', lambda r: r['ate'][TRACKS[0][0]], ' m')
     row('coverage merged', lambda r: 100 * r['cov_merged'], '%',
         better='higher')
     row('mission time (s)', lambda r: r['t_mission'], ' s')
@@ -171,7 +186,9 @@ def main():
     if md:
         print('| track | team ATE mean | std | min | max |')
         print('|---|---|---|---|---|')
-    for name, _, _ in TRACKS:
+    tracks = [t for t in TRACKS
+              if not all(math.isnan(r['ate'][t[0]]) for r in runs)]
+    for name, _, _ in tracks:
         vals = [r['ate'][name] for r in runs]
         m, s = mean_std(vals)
         lo, hi = min(vals), max(vals)
@@ -181,17 +198,40 @@ def main():
             print(f'{name:<24}{sep}{m:6.2f} m ±{s:.2f}  [{lo:.2f}, {hi:.2f}]')
     print()
 
-    # Paired improvement, C vs B, per run (same seed -> fair pairing).
-    imps = [100.0 * (r['ate'][TRACKS[1][0]] - r['ate'][TRACKS[2][0]])
-            / r['ate'][TRACKS[1][0]] for r in runs
-            if r['ate'][TRACKS[1][0]] > 0]
-    m, s = mean_std(imps)
-    wins = sum(1 for i in imps if i > 0)
-    print((f'**RF factors vs no-RF baseline (paired per seed):** '
-           f'{m:.0f}% ± {s:.0f}% ATE reduction; better in {wins}/{n} runs.')
-          if md else
-          f'paired C-vs-B improvement: {m:.0f}% ±{s:.0f}%  ({wins}/{n} runs better)')
-    print()
+    # Paired improvements per run (same seed, same odometry -> fair pairing).
+    def paired(base, other, label_md, label_txt):
+        imps = [100.0 * (r['ate'][base] - r['ate'][other]) / r['ate'][base]
+                for r in runs
+                if r['ate'][base] > 0 and not math.isnan(r['ate'][other])]
+        if not imps:
+            return
+        m, s = mean_std(imps)
+        wins = sum(1 for i in imps if i > 0)
+        print((f'**{label_md} (paired per seed):** {m:.0f}% ± {s:.0f}% ATE '
+               f'reduction (median {st.median(imps):.0f}%); better in '
+               f'{wins}/{len(imps)} runs.')
+              if md else
+              f'{label_txt}: {m:.0f}% ±{s:.0f}% (median {st.median(imps):.0f}%)'
+              f'  ({wins}/{len(imps)} runs better)')
+        print()
+
+    paired(TRACKS[1][0], TRACKS[2][0], 'RF factors vs no-RF baseline (C vs B)',
+           'paired C-vs-B improvement')
+    paired(TRACKS[1][0], TRACKS[3][0], 'RF + bias state vs no-RF (D vs B)',
+           'paired D-vs-B improvement')
+    paired(TRACKS[2][0], TRACKS[3][0], 'bias state vs position-only fusion (D vs C)',
+           'paired D-vs-C improvement')
+    if any('bias_err' in r for r in runs):
+        errs = [e for r in runs for e in r.get('bias_err', [])]
+        trues = [e for r in runs for e in r.get('bias_true', [])]
+        print((f'**Odometry self-calibration:** true |scale bias| '
+               f'{100 * st.mean(trues):.1f}% on average; residual after the '
+               f'mission {100 * st.mean(errs):.1f}% ± {100 * st.pstdev(errs):.1f}% '
+               f'({len(errs)} robot-runs).')
+              if md else
+              f'bias calibration: true {100 * st.mean(trues):.1f}% -> residual '
+              f'{100 * st.mean(errs):.1f}% ±{100 * st.pstdev(errs):.1f}%')
+        print()
 
     co, _ = mean_std([r['cov_own'] for r in runs])
     cm, _ = mean_std([r['cov_merged'] for r in runs])
@@ -216,14 +256,14 @@ def main():
         import matplotlib.pyplot as plt
         fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.2))
         # Left: ATE per track, one dot per run + mean bar.
-        for k, (name, _, _) in enumerate(TRACKS):
+        for k, (name, _, _) in enumerate(tracks):
             vals = [r['ate'][name] for r in runs]
             axes[0].scatter([k] * len(vals), vals, alpha=0.65, zorder=3)
             m, s = mean_std(vals)
             axes[0].errorbar([k], [m], yerr=[s], fmt='_', ms=28, lw=2,
                              color='black', capsize=6, zorder=4)
-        axes[0].set_xticks(range(len(TRACKS)))
-        axes[0].set_xticklabels([t[0].split(' ', 1)[0] for t in TRACKS])
+        axes[0].set_xticks(range(len(tracks)))
+        axes[0].set_xticklabels([t[0].split(' ', 1)[0] for t in tracks])
         axes[0].set_ylabel('team ATE RMSE (m)')
         axes[0].set_title(f'Localization error, {n} seeded missions '
                           '(dots = runs, bar = mean ± std)')

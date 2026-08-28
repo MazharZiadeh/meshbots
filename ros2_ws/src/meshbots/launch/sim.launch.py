@@ -107,8 +107,10 @@ def robot_stack(share, robot, mission, seed, eval_dir, chassis, formation):
           'eval_dir': eval_dir}, []),
         ('navigator', cfg('navigation.yaml'), nav_over, scan_remap),
     ]
-    if formation == 'informative':
-        stacks.append(('formation_planner', cfg('formation.yaml'),
+    planner_cfg = {'informative': 'formation.yaml',
+                   'aware': 'formation_aware.yaml'}.get(formation)
+    if planner_cfg:
+        stacks.append(('formation_planner', cfg(planner_cfg),
                        {'anchors': targets_flat}, []))
     return [
         Node(package='meshbots', executable=exe,
@@ -173,7 +175,7 @@ def generate_launch_description():
         DeclareLaunchArgument('chassis', default_value='builtin',
                               choices=['builtin', 'rosbot']),
         DeclareLaunchArgument('formation', default_value='fixed',
-                              choices=['fixed', 'informative']),
+                              choices=['fixed', 'informative', 'aware']),
         DeclareLaunchArgument('seed', default_value='0'),
         DeclareLaunchArgument('eval_dir', default_value='/tmp/meshbots_eval'),
         OpaqueFunction(function=setup),

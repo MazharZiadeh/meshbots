@@ -20,6 +20,18 @@ each candidate by the information its mesh links would yield from there:
   PDR-weighted.
 * dev_cost * |d| — mission-coherence price of deviating from the wedge.
 
+Cost-aware extension ("v2", all off by default so v1 stays reproducible):
+the first A/B campaign showed the planner harvests more RF information but
+pays for it in *integrated odometry noise from the extra manoeuvring*. So
+the planner now prices its own motion in the same units as the information
+it buys — predicted variance ADDED by travelling from the current offset to
+the candidate (motion_cost * |d - d_current|, m^2 per m) against predicted
+variance REMOVED by the links (loc_gain, m^2) — and only manoeuvres when
+the net is positive. Two further guards: an uncertainty gate (perturb only
+while tr(P) exceeds gate_trace; otherwise glide back to the wedge — sensing
+effort spent where it is needed, nothing where it is not) and a minimum
+hold time between offset switches (no zig-zag).
+
 Constraints: the perturbed slot must keep a usable link to the leader
 (PDR >= pdr_floor), stay inside a trust region around the nominal slot, and
 not sit on a known obstacle. Hysteresis avoids slot thrash. The planner is
@@ -53,9 +65,15 @@ class FormationPlanner(Node):
             ('pdr_floor', 0.5),        # min predicted PDR of the leader link
             ('max_link', 13.0),        # ignore links longer than this
             ('hysteresis', 1.12),      # new best must beat current by this
-            ('period', 1.0)])
+            ('period', 1.0),
+            # --- cost-aware (v2) extensions; 0 = v1 behaviour ---
+            ('motion_cost', 0.0),      # m^2 of DR variance per metre of offset change
+            ('gate_trace', 0.0),       # only perturb while tr(P) > this (m^2)
+            ('min_hold', 0.0)])        # s between offset switches
         (aflat, self.alpha, self.beta, self.dev_cost, self.trust_r,
-         self.pdr_floor, self.max_link, self.hyst, period) = [x.value for x in p]
+         self.pdr_floor, self.max_link, self.hyst, period,
+         self.motion_cost, self.gate_trace, self.min_hold) = [x.value for x in p]
+        self.last_switch = -1e9
         self.anchors = [(aflat[2 * i], aflat[2 * i + 1])
                         for i in range(len(aflat) // 2)]
 
@@ -162,7 +180,9 @@ class FormationPlanner(Node):
             partners.append((ax, ay, 0.0, False))
         return partners
 
-    def score(self, qx, qy, dev, partners):
+    def score(self, qx, qy, dev, partners, trans=0.0):
+        """trans: metres the robot must travel (relative to the wedge) to
+        reach this offset from the current one — charged at motion_cost."""
         if not self.cell_ok(qx, qy):
             return None
         loc_gain, map_gain = 0.0, 0.0
@@ -189,7 +209,7 @@ class FormationPlanner(Node):
         if leader_pdr is not None and leader_pdr < self.pdr_floor:
             return None     # never trade away the command link
         return (self.alpha * loc_gain + self.beta * map_gain
-                - self.dev_cost * dev)
+                - self.dev_cost * dev - self.motion_cost * trans)
 
     def tick(self):
         if (self.phase not in ('TRAVEL', 'RETURN') or self.slot is None
@@ -199,6 +219,21 @@ class FormationPlanner(Node):
         c, s = math.cos(lyaw), math.sin(lyaw)
         partners = self.link_partners()
         if not partners:
+            return
+        now = self.now()
+
+        # Uncertainty gate: while the estimate is already tight, sensing
+        # effort buys nothing — glide back to the wedge and stay there.
+        if self.gate_trace > 0.0 and float(np.trace(self.P)) < self.gate_trace:
+            if self.current != (0.0, 0.0):
+                self.get_logger().info(f'{self.me}: SLOT gate -> wedge '
+                                       f'trP={float(np.trace(self.P)):.3f}')
+                self.current = (0.0, 0.0)
+                self.last_switch = now
+            self.publish_offset(self.current)
+            return
+        if now - self.last_switch < self.min_hold:
+            self.publish_offset(self.current)
             return
 
         # Candidates: keep-current, nominal, and two rings around the slot.
@@ -215,7 +250,8 @@ class FormationPlanner(Node):
                 continue
             qx = sx + c * dx - s * dy
             qy = sy + s * dx + c * dy
-            sc = self.score(qx, qy, dev, partners)
+            trans = math.hypot(dx - self.current[0], dy - self.current[1])
+            sc = self.score(qx, qy, dev, partners, trans)
             if sc is None:
                 continue
             if (dx, dy) == self.current:
@@ -229,7 +265,15 @@ class FormationPlanner(Node):
         if cur_score is not None and best != self.current \
                 and best_score < cur_score * self.hyst + 1e-6:
             best = self.current
+        if best != self.current:
+            self.last_switch = now
+            self.get_logger().info(
+                f'{self.me}: SLOT switch ({self.current[0]:.1f},{self.current[1]:.1f})'
+                f' -> ({best[0]:.1f},{best[1]:.1f}) trP={float(np.trace(self.P)):.3f}')
         self.current = best
+        self.publish_offset(best)
+
+    def publish_offset(self, best):
 
         out = PointStamped()
         out.header.stamp = self.get_clock().now().to_msg()

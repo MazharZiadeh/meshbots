@@ -8,8 +8,20 @@ estimate tracks run simultaneously so every mission is its own ablation:
 
   A  pure dead reckoning      — integrate noisy (v, w) only; drifts unbounded
   B  compass-aided DR         — noisy v + magnetometer yaw; the no-RF baseline
-  C  fused (the system)       — B's prediction + EKF range updates from the
+  C  fused                    — B's prediction + EKF range updates from the
                                 RSSI of mesh packets
+  D  fused + self-calibrating — C plus the wheel-odometry SCALE BIAS as an
+                                EKF state: the range factors observe it
+                                through the motion, so the mesh traffic
+                                calibrates the encoders it never sees
+
+Track D exists because of what the A/B campaigns showed: a persistent
+4-9 % velocity-scale bias is the dominant error source, and range factors
+that only correct *position* fight that drift forever without removing it.
+Making the bias observable turns a constant drift into a converging one.
+Which track drives the robot (pose, TF, mesh broadcasts) is the
+`drive_track` parameter; both are logged so every run is its own paired
+ablation.
 
 Track C's measurements are the mesh itself: every DIRECT (path length 1)
 packet heard from a peer or a delivery-pad RF tag carries the RSSI the radio
@@ -51,6 +63,84 @@ def yaw_of(q):
                       1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
+class RangeEKF:
+    """Planar EKF driven by compass-heading dead reckoning and corrected by
+    RSSI range factors. n=2: state [x, y]. n=3: state [x, y, b] where b is
+    the odometry velocity-scale bias (measured v = true v * (1 + b)), so the
+    prediction uses v_m / (1 + b) and the range factors, acting through the
+    motion Jacobian, make b observable."""
+
+    def __init__(self, x, y, n, bias_sigma0, bias_walk, process_gain,
+                 max_correction, innov_gate, p_floor):
+        self.n = n
+        self.x = np.zeros(n)
+        self.x[0], self.x[1] = x, y
+        self.P = np.eye(n) * 0.01
+        if n == 3:
+            self.P[2, 2] = bias_sigma0 ** 2
+        self.bias_walk = bias_walk
+        self.process_gain = process_gain
+        self.max_correction = max_correction
+        self.innov_gate = innov_gate
+        self.p_floor = p_floor
+        self.applied = 0
+        self.gated = 0
+
+    @property
+    def pos(self):
+        return self.x[:2]
+
+    @property
+    def bias(self):
+        return float(self.x[2]) if self.n == 3 else 0.0
+
+    def predict(self, v_m, dt, yaw):
+        c, s = math.cos(yaw), math.sin(yaw)
+        b = self.bias
+        v = v_m / (1.0 + b)
+        self.x[0] += v * dt * c
+        self.x[1] += v * dt * s
+        q = (self.process_gain * abs(v_m) * dt + 0.001) ** 2
+        if self.n == 3:
+            F = np.eye(3)
+            F[0, 2] = -v_m * dt * c / (1.0 + b) ** 2
+            F[1, 2] = -v_m * dt * s / (1.0 + b) ** 2
+            Q = np.diag([q, q, (self.bias_walk * dt) ** 2])
+            self.P = F @ self.P @ F.T + Q
+        else:
+            self.P += np.eye(2) * q
+
+    def update(self, px, py, d_hat, R):
+        """Range factor to (px, py). Returns False if gated."""
+        dx, dy = float(self.x[0]) - px, float(self.x[1]) - py
+        d_geom = math.hypot(dx, dy)
+        if d_geom < 0.5:
+            return False
+        H = np.zeros(self.n)
+        H[0], H[1] = dx / d_geom, dy / d_geom
+        S = float(H @ self.P @ H) + R
+        innov = d_hat - d_geom
+        if innov * innov > self.innov_gate ** 2 * S:
+            self.gated += 1
+            return False
+        K = (self.P @ H) / S
+        step = K * innov
+        norm = float(np.hypot(step[0], step[1]))
+        if norm > self.max_correction:
+            step *= self.max_correction / norm
+        self.x += step
+        if self.n == 3:
+            self.x[2] = min(0.25, max(-0.25, float(self.x[2])))
+        self.P = (np.eye(self.n) - np.outer(K, H)) @ self.P
+        # Covariance floor (position only): with correlated updates the
+        # filter otherwise grows overconfident and a locked-in bias becomes
+        # uncorrectable.
+        self.P[0, 0] = max(self.P[0, 0], self.p_floor)
+        self.P[1, 1] = max(self.P[1, 1], self.p_floor)
+        self.applied += 1
+        return True
+
+
 class Localizer(Node):
     def __init__(self):
         super().__init__('localizer')
@@ -69,13 +159,17 @@ class Localizer(Node):
             ('excess_db', 6.0),
             ('peer_inflation', 2.0),   # inflate peer-factor R: our fusion
                                        # double-counts correlated peer info
-            ('p_floor', 0.02)])        # covariance floor against the
+            ('p_floor', 0.02),         # covariance floor against the
                                        # overconfidence that locks in bias
+            ('drive_track', 'D'),      # which fused track drives: C or D
+            ('bias_sigma0', 0.06),     # prior std of the scale-bias state
+            ('bias_walk', 0.002)])     # random-walk std of the bias (1/s)
         (self.spawn, aflat, self.rf_on, eval_dir, noise_seed, loc_period,
          bias_v_min, bias_v_max, bias_w_max, self.sigma_v, self.sigma_w,
-         self.compass_sigma, self.process_gain, self.max_correction,
-         self.innov_gate, self.max_range, self.excess_db,
-         self.peer_inflation, self.p_floor) = [x.value for x in p]
+         self.compass_sigma, process_gain, max_correction,
+         innov_gate, self.max_range, self.excess_db,
+         self.peer_inflation, p_floor, drive_track, bias_sigma0,
+         bias_walk) = [x.value for x in p]
         self.anchors = {f'pad_{i}': (aflat[2 * i], aflat[2 * i + 1])
                         for i in range(len(aflat) // 2)}
 
@@ -94,15 +188,17 @@ class Localizer(Node):
         self.gt = None                      # (x, y, yaw)
         self.compass = syaw
         self.dr = [sx, sy, syaw]            # track A
-        self.est = np.array([sx, sy])       # tracks B/C position
-        self.est_yaw = syaw
-        self.P = np.eye(2) * 0.01
         self.b = [sx, sy]                   # track B (compass DR, no RF)
+        ekf_args = (bias_sigma0, bias_walk, process_gain, max_correction,
+                    innov_gate, p_floor)
+        self.ekf_c = RangeEKF(sx, sy, 2, *ekf_args)   # track C
+        self.ekf_d = RangeEKF(sx, sy, 3, *ekf_args)   # track D
+        self.filters = (self.ekf_c, self.ekf_d)
+        self.drive = self.ekf_d if str(drive_track).upper() == 'D' else self.ekf_c
+        self.est_yaw = syaw
         self.last_odom_t = None
         self.peers = {}                     # src -> (pose, cov, stamp)
         self.grid = None                    # own merged map for link gating
-        self.updates_applied = 0
-        self.updates_gated = 0
 
         self.pub_pose = self.create_publisher(PoseStamped, 'pose', 20)
         self.pub_cov = self.create_publisher(PoseWithCovarianceStamped,
@@ -136,7 +232,9 @@ class Localizer(Node):
                                'dr_x', 'dr_y',           # A: pure DR
                                'cdr_x', 'cdr_y',         # B: compass DR
                                'fused_x', 'fused_y',     # C: + RF factors
-                               'P_trace'])
+                               'P_trace',
+                               'fb_x', 'fb_y',           # D: + bias state
+                               'b_hat', 'b_true'])
             self.create_timer(0.5, self.log_row)
 
     def now(self):
@@ -177,14 +275,20 @@ class Localizer(Node):
         # Track B: compass DR.
         self.b[0] += v_m * dt * math.cos(self.compass)
         self.b[1] += v_m * dt * math.sin(self.compass)
-        # Track C: EKF prediction with the same measured twist.
+        # Tracks C/D: EKF prediction with the same measured twist.
         self.est_yaw = self.compass
-        self.est[0] += v_m * dt * math.cos(self.compass)
-        self.est[1] += v_m * dt * math.sin(self.compass)
-        q = (self.process_gain * abs(v_m) * dt + 0.001) ** 2
-        self.P += np.eye(2) * q
+        for f in self.filters:
+            f.predict(v_m, dt, self.compass)
 
         self.publish_poses(msg.header.stamp)
+
+    @property
+    def est(self):
+        return self.drive.pos
+
+    @property
+    def P(self):
+        return self.drive.P[:2, :2]
 
     # ---------------- RF range updates ----------------
 
@@ -246,33 +350,18 @@ class Localizer(Node):
         if d_hat > self.max_range or d_geom < 0.5:
             return
         if self.ray_blocked(ex, ey, px, py):
-            self.updates_gated += 1
+            self.drive.gated += 1
             return
 
         # Scalar EKF update: z = |x - p| + noise. Peer factors get their R
         # inflated: peer estimates are correlated with ours (they were
         # partly built from our own broadcasts), and treating them as
-        # independent double-counts information.
-        dx, dy = ex - px, ey - py
-        H = np.array([dx / d_geom, dy / d_geom])
+        # independent double-counts information. The same factor feeds
+        # both fused tracks so their comparison is paired measurement by
+        # measurement.
         R = sigma * sigma + self.peer_inflation * peer_var
-        S = float(H @ self.P @ H) + R
-        innov = d_hat - d_geom
-        if innov * innov > self.innov_gate ** 2 * S:
-            self.updates_gated += 1
-            return
-        K = (self.P @ H) / S
-        step = K * innov
-        norm = float(np.hypot(step[0], step[1]))
-        if norm > self.max_correction:
-            step *= self.max_correction / norm
-        self.est += step
-        self.P = (np.eye(2) - np.outer(K, H)) @ self.P
-        # Covariance floor: with correlated updates the filter otherwise
-        # grows overconfident and a locked-in bias becomes uncorrectable.
-        self.P[0, 0] = max(self.P[0, 0], self.p_floor)
-        self.P[1, 1] = max(self.P[1, 1], self.p_floor)
-        self.updates_applied += 1
+        for f in self.filters:
+            f.update(px, py, d_hat, R)
 
     # ---------------- output ----------------
 
@@ -330,9 +419,13 @@ class Localizer(Node):
                            round(self.gt[0], 3), round(self.gt[1], 3),
                            round(self.dr[0], 3), round(self.dr[1], 3),
                            round(self.b[0], 3), round(self.b[1], 3),
-                           round(float(self.est[0]), 3),
-                           round(float(self.est[1]), 3),
-                           round(float(np.trace(self.P)), 5)])
+                           round(float(self.ekf_c.x[0]), 3),
+                           round(float(self.ekf_c.x[1]), 3),
+                           round(float(np.trace(self.P)), 5),
+                           round(float(self.ekf_d.x[0]), 3),
+                           round(float(self.ekf_d.x[1]), 3),
+                           round(self.ekf_d.bias, 4),
+                           round(self.bias_v, 4)])
 
 
 def main():

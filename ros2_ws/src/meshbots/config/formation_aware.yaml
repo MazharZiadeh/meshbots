@@ -1,0 +1,20 @@
+# Formation-as-Aperture planner, cost-aware variant ("v2").
+# Same objective as formation.yaml plus: motion priced in variance units,
+# an uncertainty gate, and a hold time. Selected with formation:=aware.
+/**/formation_planner:
+  ros__parameters:
+    alpha: 1.0               # weight of predicted localization gain (m^2)
+    beta: 0.004              # weight per unknown map cell a link crosses
+    dev_cost: 0.004          # mission-coherence cost per metre of deviation
+    trust_radius: 2.2        # m — max slot perturbation
+    pdr_floor: 0.5           # never let the leader link drop below this PDR
+    max_link: 13.0           # m — links longer than this carry no value
+    hysteresis: 1.12         # new offset must beat current by 12%
+    period: 1.0              # s between planning cycles
+    # --- cost-aware terms ---
+    # Predicted DR variance added per metre of extra travel. Derived from the
+    # injected velocity-scale bias (|b| ~ 0.04-0.09): over a 1-2 m offset hop
+    # the bias-driven error is b*ds, i.e. ~0.006 m^2 per metre linearised.
+    motion_cost: 0.006
+    gate_trace: 0.08         # m^2 — only manoeuvre while tr(P) exceeds this
+    min_hold: 4.0            # s — minimum time between offset switches
