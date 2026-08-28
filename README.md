@@ -362,6 +362,8 @@ excess loss above 3σ_dB vote obstruction into the map.
 - [`docs/IDEA.md`](docs/IDEA.md) — the idea in one page.
 - [`docs/RELATED.md`](docs/RELATED.md) — literature pass, what is and is
   not new, reviewer risks, numbers to reuse.
+- [`docs/HARDWARE_PROTOCOL.md`](docs/HARDWARE_PROTOCOL.md) — how to
+  replace the assumed channel parameters with measured ones (two ESP32s).
 
 ## Citation, license, contact
 
