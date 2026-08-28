@@ -17,10 +17,11 @@ between two robots, whose excess attenuation reveals what stands between
 them, and which — observed through the robot's own motion — **calibrates the
 wheel odometry the robot never had a way to check.** No extra hardware; the
 measurements ride on the map updates, beacons and task auctions the team was
-sending anyway.
+sending anyway — and every relayed packet is a rover acting as
+infrastructure.
 
 <p align="center">
-  <img src="docs/bias_calibration.png" width="100%" alt="Left: wheel-scale bias estimated from packet RSSI (solid) converges to the true injected bias (dashed) within ~50 s for all 24 robot-runs. Right: team position error over time, self-calibrating fusion (green) vs position-only fusion (gray).">
+  <img src="docs/bias_calibration.png" width="100%" alt="Left: wheel-scale bias estimated from packet RSSI (solid) converges toward the true injected bias (dashed) within ~50 s, 24 robot-runs. Right: team position error over time, self-calibrating fusion (green) vs position-only fusion (gray).">
   <br><sub><b>Fig. 1 —</b> Left: each rover's hidden 4–9 % wheel-scale bias (dashed) and its estimate from packet RSSI alone (solid), 24 robot-runs. Right: team position error, position-only RF fusion (gray) vs. self-calibrating fusion (green), one line per mission.</sub>
 </p>
 
@@ -51,6 +52,8 @@ All numbers: 8 seeded missions per arm, 280 s window, three rovers, three
 delivery pads, no central coordinator. Four localization estimators run
 **simultaneously in every mission on identical degraded odometry and
 identical packets**, so every run is its own paired ablation.
+**Team ATE** = RMSE of each robot's position estimate against Gazebo ground
+truth over the whole 280 s window, averaged over the three robots.
 Details, per-seed values and caveats in [`docs/RESULTS.md`](docs/RESULTS.md);
 raw logs of every run in [`results/`](results/).
 
@@ -76,7 +79,14 @@ delivered 3/3):
 - **Mapping:** 95 % arena coverage with mesh-merged patches vs. 87 % from a
   robot's own lidar. RF-shadow evidence marks obstacles no lidar has seen.
 - **Mesh:** ≈ 4,200 packets originated, ≈ 8,400 relayed hop-by-hop per
-  mission; every relayed packet is a rover acting as infrastructure.
+  mission.
+- **Why C-vs-B reads 41 % here and 34 % in Campaign 1:** the two campaigns
+  are not the same estimator. Campaign 1 predates the consistency
+  safeguards (peer-noise inflation, covariance floor) and the seeded
+  channel, and its robots were driven by track C; in Campaign 3 the robots
+  are driven by track D, so they follow different trajectories. Each figure
+  is paired within its own campaign; they are not comparable across
+  campaigns.
 
 **Campaign 2 — formation as aperture** (paired A/B, 8 + 8 missions):
 letting followers perturb their formation slots to make their links
@@ -183,7 +193,9 @@ Things worth trying during a run:
 ```bash
 ros2 topic echo /rover_1/mesh/rx | grep -m5 path      # multi-hop routes actually taken
 ros2 topic echo /rover_2/mesh/stats                    # tx / rx / relayed / dups
-pkill -f "rover_1/swarm"                               # kill the leader: watch failover
+pkill -f "swarm.*__ns:=/rover_1"                       # kill the leader: watch failover
+pkill -f "mesh_radio.*__ns:=/rover_2"                  # partition the mesh: rover_2's
+                                                       #   merged_map stops growing from peers
 ros2 run meshbots eval_metrics --plot ate.png          # ATE of the run so far
 ```
 
