@@ -2,9 +2,11 @@
 
 Scope: the closest prior work for each claim in `PAPER.md` / `IDEA.md`.
 All entries are real papers found via web search in this pass; where I could
-only confirm an abstract (not full text) I say so. Entries marked **[verify]**
-should be opened and read before being cited. Nothing here was invented; when
-I was unsure whether a paper exists I left it out or flagged it.
+only confirm an abstract (not full text) I say so. All items flagged for
+verification in the first pass were resolved in a second pass (2026-08-29)
+against primary text where obtainable; each now carries either a confirmed
+citation or an explicit "could not confirm — do not cite". Nothing here was
+invented.
 
 Notation for the "Δ" line: *what they do* → *how we differ / what it means for
 the novelty claim*.
@@ -26,8 +28,8 @@ the novelty claim*.
    - Δ: this is the closest Mostofi work to "planning motion for informative RF measurement." It is trajectory design for a dedicated mapping mission, not perturbation of a mission-constrained formation. We must cite it and state the difference precisely.
 
 4. **Gonzalez-Ruiz, Ghaffarkhah & Mostofi, "An integrated framework for obstacle mapping with see-through capabilities using laser and wireless channel measurements," IEEE Sensors J. 14(1), 2014.**
-   - Fuses laser and wireless attenuation into one occupancy estimate; includes an *adaptive path planning strategy that uses the current uncertainty estimate to collect more informative wireless measurements* (per abstract/secondary sources — **[verify]** the exact planner in the full text).
-   - Δ: laser+RF fusion and uncertainty-driven measurement planning are *both already here*. Our "lidar gates RF, RF informs map" is a bidirectional variant, but the fusion idea is not new. The novelty must rest on (a) opportunistic traffic, (b) formation-slot perturbation under mission constraints, (c) decentralization — not on laser+RF fusion or informative-path planning per se.
+   - Fuses laser and wireless attenuation into one occupancy estimate: laser maps the visible parts (occupancy grid), wireless channel measurements map the occluded parts (confirmed from the IEEE Xplore abstract, DOI 10.1109/JSEN.2013.2278394). A secondary summary also attributes to it an "adaptive path planning strategy that uses the current uncertainty estimate to collect more informative wireless measurements" — **could not confirm against the primary text (paywalled; no abstract via Crossref) — do not cite this paper for adaptive planning until read.** The informative-sampling claim is safely citable from Gonzalez-Ruiz & Mostofi, IEEE Sensors J. 2013 (entry 3) instead.
+   - Δ: laser+RF fusion is *already here*, and informative RF sampling patterns are in entry 3. Our "lidar gates RF, RF informs map" is a bidirectional variant, but the fusion idea is not new. The novelty must rest on (a) opportunistic traffic, (b) formation-slot perturbation under mission constraints, (c) decentralization — not on laser+RF fusion or informative-path planning per se.
 
 5. **Depatla, Buckland & Mostofi, "X-ray vision with only WiFi power measurements using Rytov wave models," IEEE Trans. Veh. Tech. 2015.** — Wave-model (not just LOS-attenuation) imaging through walls. Δ: shows where a serious RF-mapping paper goes beyond the log-distance model; our channel simulator is far cruder — a limitation to state.
 
@@ -60,7 +62,7 @@ the novelty claim*.
     - Estimate the *metric scale* of monocular VO from UWB ranges to (even a single) anchor.
     - Δ: this is the nearest existing instance of "ranges observe an odometry scale factor." They do it for VO scale with UWB (σ ≈ 0.1 m); we do it for *wheel* velocity scale with RSSI (σ ≈ metres). The estimation structure is the same; what is new is the sensor (opportunistic RSSI) and the state (wheel scale), not the idea. **Do not claim "mesh calibrates the wheels" as a structurally new observation model.**
 
-15. **Sun et al., "CT-UIO: continuous-time UWB-inertial-odometer localization using non-uniform B-spline with fewer anchors," IEEE TMC 2025** (abstract only — **[verify]** whether odometer scale is in the state). UWB range + IMU + wheel odometer fusion; positioning 0.15–0.40 m. Δ: representative of the UWB+odometer tightly-coupled literature; several such papers (e.g., Electronics 13(8):1518, 2024, "dynamic UKF UWB/wheel odometry") augment the state with an odometer scale factor. Cite as a class.
+15. **Sun et al., "CT-UIO: continuous-time UWB-inertial-odometer localization using non-uniform B-spline with fewer anchors," IEEE TMC 2025 (arXiv 2502.06287).** Full text checked: the odometer scale is **not** estimated online — "the IMU bias and odometer scale are initialized" beforehand, and in experiments "the odometer scale factor error is set to be 0.5 %" (Turtlebot3 Waffle Pi, Nooploop LinkTrack UWB, LOS ranging error N(−0.055 m, 0.051² m²)). Positioning 0.15–0.40 m. Δ: confirms (a) a realistic wheel-scale error magnitude (0.5 %) used by a 2025 UWB+odometer paper and (b) that this line calibrates scale *offline*; do not cite it as prior art for online scale estimation. Electronics 13(8):1518 (2024, dynamic UKF UWB/wheel odometry) was not checked — cite only as "UWB+odometer tightly-coupled fusion".
 
 16. **Yang et al., "Robust online calibration for UWB-aided visual-inertial navigation with bias correction," arXiv 2508.10999, 2025.** — Online UWB range bias/scale calibration inside VIO. Δ: shows the field also treats the *range* as needing scale/bias calibration — relevant because our RSSI range model (P_tx, PL_0, n) is assumed known.
 
@@ -94,8 +96,8 @@ the novelty claim*.
 
 26. **Wang, Zhang, Wu & Guo, "Rethinking RSSI for WiFi sensing," npj Wireless Technology 2, 2026** (also arXiv 2602.14004). — Shows RSSI carries Doppler/AoA/delay cues with a 3-antenna Rx; also states plainly that RSSI is "often regarded as too coarse for sensing," with displacements >1 m needed. Δ: cite when defending RSSI (vs CSI) as the cheapest possible modality and when listing CSI as the upgrade path.
 
-27. **Dijkstra, Jadhav, Sloot, Marcantoni, Jayawardhana, Gil & Haghighat, "WiFi-CSI sensing and bearing estimation in multi-robot systems: an open-source simulation framework," arXiv 2410.01398, 2024** (and the Gil-group WSR toolbox it replicates; **[verify]** WSR citation: Jadhav et al., IJRR 2022 "A wireless signal-based sensing framework for robotics").
-    - Bearing between robots from the CSI of *inter-robot communication packets*, Gazebo + Turtlebot3.
+27. **Dijkstra, Jadhav, Sloot, Marcantoni, Jayawardhana, Gil & Haghighat, "WiFi-CSI sensing and bearing estimation in multi-robot systems: an open-source simulation framework," arXiv 2410.01398, 2024** (and the Gil-group WSR toolbox it replicates).
+    - Bearing between robots from the CSI of *inter-robot communication packets*, Gazebo + Turtlebot3. The WSR toolbox it replicates is confirmed: **Jadhav, Wang, Zhang, Khatib, Kumar & Gil, "A wireless signal-based sensing framework for robotics," IJRR 41(11–12):955–992, 2022 (arXiv 2012.04174)** — AOA to other robots from WiFi CSI using the robot's own motion as a virtual antenna array, NLOS, no infrastructure.
     - Δ: **another "communication packets as sensing" precedent, in the same simulator ecosystem**, with bearing instead of range. Must be cited; positions our RSSI choice as the coarser, hardware-free end of the same idea.
 
 ## 4. Communication-aware planning; formation geometry optimized for range-only localization
@@ -104,17 +106,18 @@ the novelty claim*.
 
 29. **Mikkelsen, Galeazzi & Fumagalli, "Optimal multi-robot communication-aware trajectory planning by constraining the Fiedler value," 2024 (arXiv 2406.18452)**; distributed ADMM version arXiv 2408.05111. — Fiedler-value constraint in trajectory optimization. Δ: this is the `[FiedlerPlanning24]` placeholder in PAPER.md.
 
-30. **Zhou & Roumeliotis, "Optimal motion strategies for range-only constrained multisensor target tracking," IEEE T-RO 27(4), 2011** (+ TR "Optimal motion strategies for range and bearing constrained multisensor…" 2009).
+30. **Zhou & Roumeliotis, "Optimal motion strategies for range-only constrained multisensor target tracking," IEEE T-RO 24(5):1168–1185, 2008**; **Zhou & Roumeliotis, "Multirobot active target tracking with combinations of relative observations," IEEE T-RO 27(4):678–695, 2011** (venues/years confirmed via dblp/IEEE Xplore). Both are one-step-ahead (myopic) *online* motion selection each time step; the target is an external moving object, not the team itself, and there is no mapping term.
     - Robots choose next positions to make their *range* measurements to a target most informative (min trace / max eigenvalue of covariance), proven NP-hard with speed limits, relaxations given.
     - Δ: our `loc_gain` (predicted scalar-EKF variance reduction per link, direction diversity rewarded) is a one-step greedy instance of exactly this. Cite; do not claim the objective is new.
 
 31. **Le Ny & Chauvière, "Localizability-constrained deployment of mobile robotic networks with noisy range measurements," ACC 2018 (arXiv 1801.04816).**
-    - Gradient-descent motion planners keep the team's range graph in a geometry favourable to range-only CL ("localizability" potential, linked to weighted rigidity).
-    - Δ: formation geometry optimized for range-only CL, online, decentralized-ish. Very close to "formation as aperture" minus the mission constraint and the mapping term.
+    - **Full text checked.** Robots descend the gradient of a potential f(p) = f_loc(p) + α·f_conn(p) + β·f_task(p), where f_loc is a CRB/Fisher-information localizability term (D-, A-, T-, E-optimal variants), f_conn a connectivity term and f_task a generic task potential (their example: reach target x-coordinates). Distributed gradient computation is discussed; gradient descent runs continuously during deployment (reactive, not a precomputed formation), but validation is **simulation only** (4 robots, additive range noise σ = 0.1). No coverage/occupancy/mapping term.
+    - Δ: closest prior work to the *online* half of our planner: information potential + task potential, descended online. Ours differs by the map term on link rays, the opportunistic RSSI sensor, the explicit mission constraints (PDR floor, obstacle-free slot), and a live mission. Cite it as the direct precedent for "loc_gain + task cost, online".
 
 32. **Cossette, Shalaby, Saussié, Le Ny & Forbes, "Optimal multi-robot formations for relative pose estimation using range measurements," IROS 2022 (arXiv 2205.14263)**; **Ahmed, Shalaby, Le Ny & Forbes, "Optimal robot formations: balancing range-based observability and user-defined configurations," IROS 2024 (arXiv 2403.00988).**
     - Optimize formation geometry by maximizing Fisher information of inter-agent ranges (UWB); the 2024 paper adds a *user-defined desired formation* term and trades it against observability — i.e. **the same mission-vs-sensing trade our (ρ, λ, α) parameterize**, with hardware experiments.
-    - Δ: **This is the closest prior work to contribution (iv).** Differences we can honestly claim: opportunistic RSSI instead of UWB; the map-coverage term `map_gain` (rays through unknown cells) which they do not have; online per-cycle perturbation with hysteresis inside a live mission (theirs is largely offline optimization then tracking — **[verify]** in full text); the short-vs-long link tension between ranging and mapping. "Formation as aperture" as a *name* is ours; as a *concept* it is already in Cossette/Ahmed and Le Ny.
+    - **Full text checked (both).** Cossette 2022: "the optimization is only done offline … precompute optimal formations for varying robot numbers N … store the solutions in memory onboard each robot"; a "distributed, real-time implementation … in the presence of obstacles … is beyond the scope of this paper." Two UWB tags per quadcopter (~10 cm ranging), Fisher-information cost + collision term; experiment: 3 quadcopters, formation change gives a 68 % reduction in estimation variance (mean positioning error 0.22 m). Ahmed 2024: "the optimization is done offline. These formation results can then be stored in the memory of the robots and used for online planning"; cost J_cov = J_adj + J_overlap + J_est + J_col, where the coverage terms are **camera field-of-view footprint** terms (adjacency/overlap of sensor discs), *not* anything defined on the ranging rays; evaluated in coverage path planning with EKF-SLAM, simulation + experiment.
+    - Δ: **This is the closest prior work to contribution (iv).** Differences we can now state precisely: (1) both optimize the formation *offline* and track it; ours re-evaluates slot perturbations every planning cycle online; (2) neither has any term on the inter-robot link rays — our `map_gain` (unknown cells swept by the link segment) has no counterpart; (3) they use dedicated UWB, we use opportunistic RSSI; (4) the short-vs-long link tension between ranging and mapping does not arise for them. Ahmed's "user-defined formation vs observability" trade is the precedent for our mission-vs-sensing trade and must be cited as such. "Formation as aperture" as a *name* is ours; as a *concept* it is already in Cossette/Ahmed and Le Ny.
 
 33. **Knowles, Dai & Gao, "Multi-robot collaborative localization and planning with inter-ranging," ION GNSS+ 2024 (arXiv 2406.16679).** — CADRE-style lunar rovers, UWB mesh ranging + VO; decentralized planner picks paths to lower a geometry-based (DOP-like) uncertainty metric; hardware demo. Δ: the `[InterRanging24]` placeholder. Same "move to make ranges informative" idea, dedicated UWB.
 
@@ -172,14 +175,14 @@ I found **no** paper that combines (a) per-packet RSSI of mission traffic, (b) a
 **Genuinely new (defensible):**
 1. The *combination* in one decentralized ROS 2 system: mission-traffic RSSI → range factors + RF-shadow occupancy evidence + wheel-velocity-scale state, with lidar↔RF bidirectional gating, on a live mission with formation, auctions and delivery.
 2. The `map_gain` term (rays swept through unknown cells) inside a formation-slot objective, and the explicit *ranging-prefers-short-links vs mapping-prefers-long-links* tension. I found no formation-optimization paper with an occupancy-coverage term on the link rays.
-3. Online, per-cycle, hysteretic slot perturbation inside a mission (vs offline optimal formation) — **[verify]** against Ahmed et al. 2024 and Le Ny 2018 full texts before asserting.
+3. Online, per-cycle, hysteretic slot perturbation inside a live mission. **Confirmed against full texts:** Cossette 2022 and Ahmed 2024 optimize formations offline and store them; Le Ny & Chauvière 2018 is online gradient descent but simulation-only with a generic task potential and no map term; Zhou & Roumeliotis 2008/2011 are online but track an external target. Ours is the only one of these that (a) runs online, (b) inside a mission with delivery/auction constraints, (c) with a link-ray coverage term. Claim exactly that, no more.
 4. The paired A/B mission-cost accounting (delivery time / completions vs information gained), and the honest negative-ish result.
 5. Wheel-scale bias observed through *RSSI* ranges specifically (novel sensor for a known state).
 
 **Applied / combined (must be cited, not claimed):**
 - RSS-attenuation obstacle mapping and laser+RF fusion with uncertainty-driven measurement planning: Mostofi 2010–2014.
 - RSSI of exchanged messages as range for team localization: Oliveira 2014; Kilobot 2014; Latif & Parasuraman.
-- Formation geometry optimized for range-only estimation, including a mission-vs-observability trade: Zhou & Roumeliotis 2011, Le Ny & Chauvière 2018, Cossette 2022, Ahmed 2024, Knowles 2024.
+- Formation geometry optimized for range-only estimation, including a mission-vs-observability trade: Zhou & Roumeliotis 2008/2011, Le Ny & Chauvière 2018, Cossette 2022, Ahmed 2024, Knowles 2024.
 - Ranges observing an odometry scale: Nguyen et al. 2020 (UWB→VO scale); UWB+odometer scale-state fusion (2024–2025).
 - Double counting / inconsistency and CI as the fix: Julier & Uhlmann 1997 → Carrillo-Arce 2013 → Luft 2018 → Chang 2021.
 
@@ -189,16 +192,19 @@ I found **no** paper that combines (a) per-packet RSSI of mission traffic, (b) a
 
 | Quantity | Value | Source |
 |---|---|---|
-| Log-normal shadowing σ, indoor 2.4 GHz, same room | 3–6 dB (3.3–4.1 dB classrooms/labs; ≈4.4 dB room-to-room) | textbook/measurement summaries (Rappaport-derived; ScienceDirect "Log-normal shadowing" overview) — **[verify]** exact table before citing |
+| Log-normal shadowing σ, indoor, by building type (primary table) | Grocery store 914 MHz: n = 1.8, σ = 5.2 dB; Retail store 914 MHz: n = 2.2, σ = 8.7 dB; Office, hard partitions 1500 MHz: n = 3.0, σ = 7.0 dB; Office, soft partitions 900 MHz: n = 2.4, σ = 9.6 dB; Office, soft partitions 1900 MHz: n = 2.6, σ = 14.1 dB; Factory LOS 1300 MHz: n = 1.6–2.0, σ = 3.0–6.0 dB | **Andersen, Rappaport & Yoshida, "Propagation measurements and models for wireless communications channels," IEEE Communications Magazine 33(1):42–49, 1995, Table 2** (read from the PDF; this is the table reproduced as Table 4.6 in Rappaport, *Wireless Communications: Principles and Practice*, 2nd ed., 2002). Cite the 1995 paper as primary. |
+| Shadowing σ, multi-floor office building, 914 MHz | 5.8 dB overall (as low as ≈4 dB for individual areas) | Seidel & Rappaport, "914 MHz path loss prediction models for indoor wireless communications in multifloored buildings," IEEE Trans. Antennas Propag. 40(2):207–217, 1992 (abstract) |
+| Shadowing σ, 2.4 GHz WLAN classrooms/labs/corridors | "3.3–4.1 dB" figures seen in a search summary — **could not confirm against a primary (the likely source, D. Tummala, "Indoor propagation modeling at 2.4 GHz for IEEE 802.11 networks," M.S. thesis, Univ. North Texas, 2005, is behind a bot-check; Faria's Stanford TR was unreachable) — do not cite these numbers.** Use Bullmann 2020 (5.5 dB) for 2.4 GHz WiFi instead. |
 | Shadowing σ, indoor multi-room WiFi | 5.5 dB (fitted) ; γ ∈ [2.5, 3.7] | Bullmann et al., Sensors 2020 |
-| Shadowing σ, multi-floor with FAF | σ = 6.93 dB, n = 2.53, FAF 5.52 dB/floor | (search hit; multi-floor LoRa/WiFi study — **[verify]** paper identity) |
+| Shadowing σ, multi-floor with FAF (433 MHz LoRa, 4-storey university building) | σ = 6.93 dB, n = 2.53, FAF 5.52 dB/floor | "Measurement-based modeling of large-scale and time-varying small-scale fading for LoRa in indoor multi-floor environments," *Sensors* 26(4):1152, 2026, DOI 10.3390/s26041152 (identity confirmed; numbers from abstract). **Note: 433 MHz LoRa, not 2.4 GHz WiFi** — cite only as "same order of magnitude across bands". |
 | Shadowing σ, outdoor | 4–12 dB (typ. 8–10 dB) | same overviews |
 | RSSI positioning error, real building, commodity APs | 4.3–6.4 m mean (vs 3.3–4.4 m calibrated FTM) | Bullmann et al. 2020 |
 | Derived RSSI range σ_d at d = 10 m, n = 2.5, σ_dB = 5.5 | σ_d ≈ d·ln10·σ_dB/(10n) ≈ 5.1 m (i.e. ~50 %) — at d = 3 m ≈ 1.5 m | your own formula (PAPER §3) + Bullmann parameters |
-| Wall attenuation (single obstruction on LOS link) | "up to ~10 dB" reported in multi-robot RSSI localization | Latif & Parasuraman 2022 (secondary) — **[verify]** |
+| Wall attenuation (single obstruction on LOS link) | 10 dB per (virtual) wall | Latif & Parasuraman 2022, full text: "Each wall will attenuate 10 dBm of RSSI signal power" — this is a **simulation assumption**, not a measurement; do not cite it as an empirical number. Their sim result: ≈1.8 m localization error over a 3600 m² region, 35 % RMSE reduction vs baseline. For measured wall loss use a propagation source (Andersen et al. 1995 partition-loss discussion; or in-building partition loss measurements at 2.5 GHz, arXiv 1701.03415). |
 | UWB LOS ranging accuracy | decimetre-level; NLOS adds unknown positive bias (tens of cm to m) | Cano/Le Ny IMM-NLOS 2020 (arXiv 2009.03538); CADRE/Knowles 2024 |
 | Wheel-diameter mismatch detectable / scale calibration precision | 0.1 % ; 0.3–0.5 % of full scale | Borenstein & Feng 1996 |
-| Odometry improvement from systematic calibration | ≥ 10× (Borenstein) ; up to 35× under slip (secondary, **[verify]**) | Borenstein & Feng 1996; De Giorgi et al. 2023 |
+| Odometry improvement from systematic calibration | ≥ 10× (Borenstein & Feng 1996, confirmed). The "up to 35× under slip" figure attributed to De Giorgi et al. 2023 **could not be confirmed** (MDPI/IRIS full text blocked; abstract confirms method — encoder/gyro/IMU redundancy to detect slip during online calibration — but gives no factor) — **do not cite the 35× number.** | Borenstein & Feng 1996; De Giorgi, De Palma & Parlangeli, *Robotics* 13(1):7, 2023 (method only) |
+| Wheel/odometer scale-factor error assumed in a 2025 UWB+odometer system | 0.5 % | Sun et al., CT-UIO, IEEE TMC 2025 (full text) |
 | UWB+IMU+odometer fused accuracy | 0.15–0.40 m | CT-UIO, TMC 2025 |
 
 Sanity check against our sim: with σ_dB matching real indoor values (≥5 dB), single-link RSSI range σ at 5–10 m is 2.5–5 m. A 34 % ATE reduction to 0.68 m from such factors is only credible with many factors, short links (< 5 m), and strong anchors — say this explicitly and report the σ_dB used.
@@ -223,7 +229,7 @@ Sanity check against our sim: with σ_dB matching real indoor values (≥5 dB), 
 - `[InterRanging24]` → Knowles, Dai & Gao, arXiv 2406.16679.
 - `[DCLSparse24]` → Sagale, Kargar Tasooji & Parasuraman, arXiv 2412.14793.
 - `[FiedlerPlanning24]` → Mikkelsen, Galeazzi & Fumagalli, arXiv 2406.18452.
-- `[CommAwareTraj20]` → likely "Communication-aware energy efficient trajectory planning with limited channel knowledge," arXiv 2011.09206 (Licea/… — **[verify]** authors).
+- `[CommAwareTraj20]` → **confirmed:** D. Bonilla Licea, M. Bonilla, M. Ghogho, S. Lasaulce & V. S. Varma, "Communication-aware energy efficient trajectory planning with limited channel knowledge," IEEE Trans. Robotics 36(2):431–442, 2020 (arXiv 2011.09206).
 - `[UAVSwarmISAC25]` → Zhai, Ni, Wang, Niyato & Hossain, arXiv 2511.03283.
 - `[Julier & Uhlmann 1997]` → ACC 1997, DOI 10.1109/ACC.1997.609105.
-- Add: Oliveira 2014; Rubenstein 2014; Cossette 2022; Ahmed 2024; Le Ny & Chauvière 2018; Zhou & Roumeliotis 2011; Carrillo-Arce 2013; Luft 2018; Chang 2021; Bullmann 2020; Borenstein & Feng 1996; Nguyen 2020; Dijkstra 2024; Clark/PropEM-L 2022; Latif & Parasuraman 2022/2024.
+- Add: Oliveira 2014; Rubenstein 2014; Cossette 2022; Ahmed 2024; Le Ny & Chauvière 2018; Zhou & Roumeliotis 2008/2011; Carrillo-Arce 2013; Luft 2018; Chang 2021; Bullmann 2020; Borenstein & Feng 1996; Nguyen 2020; Dijkstra 2024; Clark/PropEM-L 2022; Latif & Parasuraman 2022/2024.
