@@ -253,8 +253,13 @@ state)**. Paired per seed: C vs B −41% ± 13% (8/8), D vs B −52% ± 15%
 (8/8), **D vs C −20% ± 8% (median −21%, 8/8)**. The injected scale bias
 (mean |b| = 6.5%) is recovered to a residual of 1.1% ± 0.5% over 24
 robot-runs, converging within ~50 s of motion (Fig. bias_calibration).
-8/8 missions delivered 3/3 (median 128 s). The seed-paired formation arms
-(cost-aware and original planner on the same estimator) are: [TBD].
+8/8 missions delivered 3/3 (median 128 s). Seed-paired cost-aware planner arm
+(§4, with motion cost, uncertainty gate and hold time): track-D ATE 0.42
+vs 0.46 m (better in 5/8), coverage 96.6 vs 95.1% (7/8), pure-DR ATE
+1.93 vs 1.99 m (no added drift), mission time 128.6 vs 128.4 s, 8/8
+deliveries in both, bias residual 0.7% vs 1.1%. Once its costs are in the
+objective the planner is free of the Campaign-2 penalties and modestly
+positive; the original planner on the same estimator: [TBD].
 
 **Campaign 4 (channel harshness, fixed wedge, n=8 per point):** [TBD —
 ATE per track vs σ_dB ∈ {2, 4, 6, 8} and the realistic composite]

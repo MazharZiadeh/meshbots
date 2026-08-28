@@ -1,0 +1,85 @@
+[INFO] [launch]: All log files can be found below /home/mazhar/.ros/log/2026-08-29-01-35-22-286552-mazhar-Predator-PHN16-72-91143
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [gz-1]: process started with pid [91146]
+[INFO] [parameter_bridge-2]: process started with pid [91147]
+[INFO] [create-3]: process started with pid [91148]
+[INFO] [parameter_bridge-4]: process started with pid [91149]
+[INFO] [mesh_radio-5]: process started with pid [91150]
+[INFO] [localizer-6]: process started with pid [91153]
+[INFO] [mapper-7]: process started with pid [91154]
+[INFO] [swarm-8]: process started with pid [91155]
+[INFO] [navigator-9]: process started with pid [91156]
+[INFO] [formation_planner-10]: process started with pid [91157]
+[INFO] [create-11]: process started with pid [91158]
+[INFO] [parameter_bridge-12]: process started with pid [91159]
+[INFO] [mesh_radio-13]: process started with pid [91160]
+[INFO] [localizer-14]: process started with pid [91161]
+[INFO] [mapper-15]: process started with pid [91162]
+[INFO] [swarm-16]: process started with pid [91163]
+[INFO] [navigator-17]: process started with pid [91164]
+[INFO] [formation_planner-18]: process started with pid [91165]
+[INFO] [create-19]: process started with pid [91166]
+[INFO] [parameter_bridge-20]: process started with pid [91168]
+[INFO] [mesh_radio-21]: process started with pid [91174]
+[INFO] [localizer-22]: process started with pid [91175]
+[INFO] [mapper-23]: process started with pid [91178]
+[INFO] [swarm-24]: process started with pid [91179]
+[INFO] [navigator-25]: process started with pid [91180]
+[INFO] [formation_planner-26]: process started with pid [91184]
+[INFO] [radio_channel-27]: process started with pid [91186]
+[create-11] [INFO] [1787956522.487580161] [spawn_rover_2]: Requesting list of world names.
+[parameter_bridge-2] [INFO] [1787956522.504104852] [clock_bridge]: Creating GZ->ROS Bridge: [/clock (gz.msgs.Clock) -> /clock (rosgraph_msgs/msg/Clock)] (Lazy 0)
+[create-3] [INFO] [1787956522.504639971] [spawn_rover_1]: Requesting list of world names.
+[create-19] [INFO] [1787956522.514963769] [spawn_rover_3]: Requesting list of world names.
+[parameter_bridge-20] [INFO] [1787956522.526671698] [rover_3.bridge]: Creating ROS->GZ Bridge: [/model/rover_3/cmd_vel (geometry_msgs/msg/Twist) -> /model/rover_3/cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-20] [INFO] [1787956522.530322093] [rover_3.bridge]: Creating GZ->ROS Bridge: [/model/rover_3/odometry (gz.msgs.Odometry) -> /model/rover_3/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[parameter_bridge-20] [INFO] [1787956522.533256174] [rover_3.bridge]: Creating GZ->ROS Bridge: [/model/rover_3/scan (gz.msgs.LaserScan) -> /model/rover_3/scan (sensor_msgs/msg/LaserScan)] (Lazy 0)
+[parameter_bridge-12] [INFO] [1787956522.536474430] [rover_2.bridge]: Creating ROS->GZ Bridge: [/model/rover_2/cmd_vel (geometry_msgs/msg/Twist) -> /model/rover_2/cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1787956522.538905820] [rover_1.bridge]: Creating ROS->GZ Bridge: [/model/rover_1/cmd_vel (geometry_msgs/msg/Twist) -> /model/rover_1/cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-12] [INFO] [1787956522.542207905] [rover_2.bridge]: Creating GZ->ROS Bridge: [/model/rover_2/odometry (gz.msgs.Odometry) -> /model/rover_2/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1787956522.543352082] [rover_1.bridge]: Creating GZ->ROS Bridge: [/model/rover_1/odometry (gz.msgs.Odometry) -> /model/rover_1/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[parameter_bridge-12] [INFO] [1787956522.546543451] [rover_2.bridge]: Creating GZ->ROS Bridge: [/model/rover_2/scan (gz.msgs.LaserScan) -> /model/rover_2/scan (sensor_msgs/msg/LaserScan)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1787956522.547159773] [rover_1.bridge]: Creating GZ->ROS Bridge: [/model/rover_1/scan (gz.msgs.LaserScan) -> /model/rover_1/scan (sensor_msgs/msg/LaserScan)] (Lazy 0)
+[create-19] [INFO] [1787956523.446884617] [spawn_rover_3]: Entity creation successful.
+[create-11] [INFO] [1787956523.446939970] [spawn_rover_2]: Entity creation successful.
+[create-3] [INFO] [1787956523.447722213] [spawn_rover_1]: Entity creation successful.
+[INFO] [create-19]: process has finished cleanly [pid 91166]
+[INFO] [create-11]: process has finished cleanly [pid 91158]
+[INFO] [create-3]: process has finished cleanly [pid 91148]
+[gz-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="rover_3"]/link[@name="lidar_link"]/sensor[@name="lidar"]/gz_frame_id:/tmp/meshbots_rover_3.sdf:L47]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[gz-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="rover_2"]/link[@name="lidar_link"]/sensor[@name="lidar"]/gz_frame_id:/tmp/meshbots_rover_2.sdf:L47]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[gz-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="rover_1"]/link[@name="lidar_link"]/sensor[@name="lidar"]/gz_frame_id:/tmp/meshbots_rover_1.sdf:L47]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[gz-1] libEGL warning: pci id for fd 65: 10de:2860, driver (null)
+[gz-1] 
+[gz-1] pci id for fd 67: 10de:2860, driver (null)
+[gz-1] pci id for fd 68: 10de:2860, driver (null)
+[gz-1] libEGL warning: egl: failed to create dri2 screen
+[gz-1] libEGL warning: pci id for fd 65: 10de:2860, driver (null)
+[gz-1] 
+[gz-1] pci id for fd 67: 10de:2860, driver (null)
+[gz-1] pci id for fd 68: 10de:2860, driver (null)
+[gz-1] libEGL warning: egl: failed to create dri2 screen
+[gz-1] libEGL warning: pci id for fd 65: 10de:2860, driver (null)
+[gz-1] 
+[parameter_bridge-20] [INFO] [1787956525.355260584] [rover_3.bridge]: Passing message from ROS geometry_msgs/msg/Twist to Gazebo gz.msgs.Twist (showing msg only once per type)
+[parameter_bridge-4] [INFO] [1787956525.355353470] [rover_1.bridge]: Passing message from ROS geometry_msgs/msg/Twist to Gazebo gz.msgs.Twist (showing msg only once per type)
+[parameter_bridge-12] [INFO] [1787956525.355370646] [rover_2.bridge]: Passing message from ROS geometry_msgs/msg/Twist to Gazebo gz.msgs.Twist (showing msg only once per type)
+[formation_planner-18] [INFO] [1787956536.280493020] [rover_2.formation_planner]: rover_2: SLOT switch (0.0,0.0) -> (-1.4,-1.4) trP=0.082
+[formation_planner-18] [INFO] [1787956537.255838412] [rover_2.formation_planner]: rover_2: SLOT gate -> wedge trP=0.078
+[formation_planner-26] [INFO] [1787956541.275557697] [rover_3.formation_planner]: rover_3: SLOT switch (0.0,0.0) -> (1.4,-1.4) trP=0.081
+[formation_planner-26] [INFO] [1787956545.261884654] [rover_3.formation_planner]: rover_3: SLOT switch (1.4,-1.4) -> (-0.0,-2.0) trP=0.095
+[formation_planner-18] [INFO] [1787956549.259417802] [rover_2.formation_planner]: rover_2: SLOT switch (0.0,0.0) -> (1.4,1.4) trP=0.082
+[formation_planner-26] [INFO] [1787956549.261848868] [rover_3.formation_planner]: rover_3: SLOT switch (-0.0,-2.0) -> (1.4,-1.4) trP=0.118
+[formation_planner-18] [INFO] [1787956550.255607221] [rover_2.formation_planner]: rover_2: SLOT gate -> wedge trP=0.079
+[formation_planner-26] [INFO] [1787956553.263520029] [rover_3.formation_planner]: rover_3: SLOT switch (1.4,-1.4) -> (0.0,2.0) trP=0.129
+[formation_planner-18] [INFO] [1787956555.260812345] [rover_2.formation_planner]: rover_2: SLOT switch (0.0,0.0) -> (-0.7,0.7) trP=0.080
+[formation_planner-26] [INFO] [1787956557.259406538] [rover_3.formation_planner]: rover_3: SLOT switch (0.0,2.0) -> (0.0,1.0) trP=0.139
+[formation_planner-18] [INFO] [1787956560.260841299] [rover_2.formation_planner]: rover_2: SLOT switch (-0.7,0.7) -> (0.0,0.0) trP=0.096
+[swarm-8] [INFO] [1787956563.280851575] [rover_1.swarm]: rover_1: docked on pad 0, delivering…
+[swarm-8] [INFO] [1787956563.855966776] [rover_1.swarm]: rover_1: docked on pad 0, delivering…
+[swarm-8] [INFO] [1787956567.057178133] [rover_1.swarm]: rover_1: DELIVERED target 0
+[formation_planner-26] [INFO] [1787956568.255933068] [rover_3.formation_planner]: rover_3: SLOT gate -> wedge trP=0.044
+[swarm-24] [INFO] [1787956599.472538538] [rover_3.swarm]: rover_3: docked on pad 1, delivering…
+[swarm-24] [INFO] [1787956602.656344354] [rover_3.swarm]: rover_3: DELIVERED target 1
+[swarm-16] [INFO] [1787956649.474348153] [rover_2.swarm]: rover_2: docked on pad 2, delivering…
+[swarm-16] [INFO] [1787956652.656266871] [rover_2.swarm]: rover_2: DELIVERED target 2

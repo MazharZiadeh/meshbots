@@ -55,7 +55,37 @@ peer correlation, the parked tail). The remarkable part is the
 calibration itself: a 6.5% wheel-scale error recovered to ~1% by a sensor
 the robot was not carrying for that purpose. The formation arms of this
 campaign (cost-aware and original informative planner, same seeds, same
-estimator) are reported below as they complete.
+estimator) follow.
+
+### Campaign 3, arm 2 — cost-aware Formation-as-Aperture (`formation:=aware`, same 8 seeds)
+
+The planner of Campaign 2 with three additions: motion priced in variance
+units (m² of dead-reckoning variance per metre of offset change), an
+uncertainty gate (perturb only while tr P exceeds 0.08 m²; otherwise glide
+back to the wedge), and a 4 s minimum hold between switches. It now runs
+on the self-calibrating estimator, whose covariance is no longer pinned at
+the floor, so its geometry term carries signal.
+
+| metric | fixed wedge | cost-aware | cost-aware better |
+|---|---|---|---|
+| fused ATE, track D | 0.46 m | **0.42 m** | 5/8 |
+| fused ATE, track C | 0.57 m | 0.57 m | 4/8 |
+| pure-DR ATE (motion-noise proxy) | 1.99 m | 1.93 m | 4/8 |
+| merged-map coverage | 95.1% | **96.6%** | 7/8 |
+| mission time | 128.4 s | 128.6 s | — |
+| missions 3/3 | 8/8 | 8/8 | — |
+| bias residual | 1.1% ± 0.5% | **0.7% ± 0.5%** | — |
+| slot switches per mission | 0 | 1–9 (median 7) | — |
+
+**Verdict:** the price is now priced. In Campaign 2 the planner bought
+information with mission time and extra drift; here it manoeuvres
+sparingly (a handful of switches per mission), costs **no** mission time
+and **no** extra dead-reckoning error, and returns a modest gain — better
+coverage in 7/8 seeds, lower fused error in 5/8 (−9% on the mean), a
+tighter bias calibration. That is a neutral-to-positive result at zero
+cost, not a breakthrough; the honest summary is that formation-as-aperture
+is *safe* once its costs are in the objective, and that its upside at this
+arena scale is small because the wedge is already a decent aperture.
 
 ## Campaign 2 — Formation-as-Aperture paired A/B (8 + 8 missions, seeds 1–8)
 
