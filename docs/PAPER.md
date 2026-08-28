@@ -22,10 +22,10 @@ into a shared occupancy map, of space no lidar has seen; and (c)
 **online calibration of each robot's wheel-odometry scale bias**, which the
 range factors observe through the motion model. In a seeded Monte Carlo
 campaign with paired ablations, position-only RSSI fusion reduces team
-absolute trajectory error by [TBD]% against a no-RF baseline, and adding
-the bias state reduces it by a further [TBD]% (better in [TBD] paired
-runs), recovering a 4–9% injected scale bias to within [TBD] pp within one
-mission. We further ask whether the team's *formation geometry* can be
+absolute trajectory error by 41% against a no-RF baseline, and adding the
+bias state reduces it by a further 20% (better in 8/8 paired runs, 52%
+overall), recovering a 4–9% injected scale bias to a 1.1% residual within
+one mission. We further ask whether the team's *formation geometry* can be
 treated as a steerable sensing aperture — each follower perturbing its
 slot, within mission constraints, to make its links informative — and
 report an honest negative result at the first operating point together
@@ -246,9 +246,15 @@ information (median paired RF correction 44% vs 36%, positive in 8/8 vs
 identical seeds — the harvested information paid for the motion and no
 more.
 
-**Campaign 3 (self-calibration, n=8 per arm, seed-paired arms: fixed /
-cost-aware informative / informative):** [TBD — tracks B/C/D ATE, D-vs-C
-paired wins, bias residual, arms compared]
+**Campaign 3 (self-calibration, fixed wedge, n=8):** team ATE
+1.99 ± 0.29 m (pure DR) → 0.97 ± 0.12 m (compass DR, no RF) →
+0.57 ± 0.12 m (C, position-only RF fusion) → **0.46 ± 0.12 m (D, + bias
+state)**. Paired per seed: C vs B −41% ± 13% (8/8), D vs B −52% ± 15%
+(8/8), **D vs C −20% ± 8% (median −21%, 8/8)**. The injected scale bias
+(mean |b| = 6.5%) is recovered to a residual of 1.1% ± 0.5% over 24
+robot-runs, converging within ~50 s of motion (Fig. bias_calibration).
+8/8 missions delivered 3/3 (median 128 s). The seed-paired formation arms
+(cost-aware and original planner on the same estimator) are: [TBD].
 
 **Campaign 4 (channel harshness, fixed wedge, n=8 per point):** [TBD —
 ATE per track vs σ_dB ∈ {2, 4, 6, 8} and the realistic composite]

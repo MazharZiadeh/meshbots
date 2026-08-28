@@ -1,5 +1,62 @@
 # Monte Carlo evaluation
 
+All raw per-run logs live under `results/<campaign>/run_<seed>/` in this
+repository; every number below regenerates with
+`ros2 run meshbots batch_metrics --dir results/<campaign> --markdown`.
+
+## Campaign 3 — the mesh calibrates the wheels (8 missions, seeds 1–8, fixed wedge)
+
+Same protocol as Campaign 1, but the localizer now runs **four** tracks on
+identical noisy odometry and identical accepted range factors:
+
+- **A** pure dead reckoning · **B** compass DR (no RF, the baseline) ·
+  **C** B + RSSI range factors (position-only fusion, the Campaign-1/2
+  system) · **D** C + the wheel-odometry **scale bias as an EKF state**,
+  observed through the motion model by the same range factors. Track D
+  drives the robot.
+
+**Mission success:** 8/8 runs delivered all 3 targets (median completion
+128 s).
+
+| track | team ATE mean | std | min | max |
+|---|---|---|---|---|
+| A pure dead reckoning | 1.99 m | 0.29 | 1.64 | 2.56 |
+| B compass DR (no RF) | 0.97 m | 0.12 | 0.75 | 1.07 |
+| C + RF range factors | 0.57 m | 0.12 | 0.45 | 0.76 |
+| **D + RF + bias state** | **0.46 m** | 0.12 | 0.32 | 0.63 |
+
+Paired per seed (same odometry draw, same packets):
+
+| comparison | ATE reduction | median | better in |
+|---|---|---|---|
+| C vs B — RF factors vs no RF | 41% ± 13% | 44% | 8/8 |
+| **D vs B — RF + bias state vs no RF** | **52% ± 15%** | 56% | 8/8 |
+| **D vs C — the bias state alone** | **20% ± 8%** | 21% | **8/8** |
+
+**Self-calibration:** the injected scale bias averages 6.5% in magnitude
+(range 4–9%, random sign); after one mission the residual is
+**1.1% ± 0.5%** over 24 robot-runs — from packet RSSI alone, no encoder
+calibration, no external positioning. Convergence takes ~50 s of motion
+(figure below). Coverage 95% merged vs 87% own lidar; ≈8,400 packets
+relayed per mission.
+
+Per-seed team ATE (B / C / D, m): 1.03/0.49/0.32 · 1.10/0.78/0.64 ·
+1.09/0.54/0.42 · 0.92/0.46/0.34 · 1.04/0.66/0.52 · 0.77/0.49/0.41 ·
+1.10/0.52/0.41 · 0.87/0.69/0.63.
+
+![Bias calibration](bias_calibration.png)
+
+![Campaign 3 Monte Carlo](montecarlo_c3.png)
+
+**Read honestly:** the gain from the bias state is consistent (8/8) and
+moderate (one fifth of the remaining error), not dramatic; the residual
+error is now dominated by things a scale state cannot fix (range noise,
+peer correlation, the parked tail). The remarkable part is the
+calibration itself: a 6.5% wheel-scale error recovered to ~1% by a sensor
+the robot was not carrying for that purpose. The formation arms of this
+campaign (cost-aware and original informative planner, same seeds, same
+estimator) are reported below as they complete.
+
 ## Campaign 2 — Formation-as-Aperture paired A/B (8 + 8 missions, seeds 1–8)
 
 Same-seed arms on identical code: fixed wedge vs. informative formation
